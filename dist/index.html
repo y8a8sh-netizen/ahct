@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>نظام اختبارات الكلية التقنية بأحد رفيدة</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Tajawal', 'sans-serif'],
+            },
+            colors: {
+              tvtc: {
+                green: '#006d5b',
+                gold: '#cba052',
+                light: '#f3f4f6'
+              }
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      /* ========================
+         📱 RESPONSIVE DESIGN FOR MOBILE
+         ======================== */
+      
+      /* Mobile Styles (screens smaller than 768px) */
+      @media (max-width: 767px) {
+        /* Base Typography */
+        body {
+          font-size: 14px;
+        }
+        
+        h1 {
+          font-size: 1.5rem !important;
+        }
+        
+        h2 {
+          font-size: 1.25rem !important;
+        }
+        
+        h3 {
+          font-size: 1.1rem !important;
+        }
+        
+        /* Container & Padding Adjustments */
+        .container {
+          padding-left: 0.75rem !important;
+          padding-right: 0.75rem !important;
+        }
+        
+        /* Cards & Panels */
+        .bg-white, .shadow {
+          margin: 0.5rem !important;
+          padding: 0.75rem !important;
+          border-radius: 0.5rem !important;
+        }
+        
+        /* Buttons */
+        button {
+          padding: 0.5rem 1rem !important;
+          font-size: 0.875rem !important;
+          width: 100% !important;
+          margin-bottom: 0.5rem !important;
+        }
+        
+        /* Input Fields */
+        input, select, textarea {
+          font-size: 16px !important; /* Prevents zoom on iOS */
+          padding: 0.75rem !important;
+          width: 100% !important;
+        }
+        
+        /* Tables - Make Scrollable Horizontally */
+        .overflow-x-auto {
+          overflow-x: auto !important;
+          -webkit-overflow-scrolling: touch;
+        }
+        
+        table {
+          min-width: 600px;
+          font-size: 0.75rem !important;
+        }
+        
+        th, td {
+          padding: 0.5rem !important;
+          white-space: nowrap;
+        }
+        
+        /* Grid Layouts - Stack Vertically on Mobile */
+        .grid {
+          grid-template-columns: 1fr !important;
+          gap: 0.75rem !important;
+        }
+        
+        /* Flex Layouts - Wrap on Mobile */
+        .flex {
+          flex-wrap: wrap !important;
+        }
+        
+        /* Navigation Tabs */
+        nav button, nav a {
+          font-size: 0.875rem !important;
+          padding: 0.5rem 0.75rem !important;
+        }
+        
+        /* Modal/Dialog */
+        .modal, .dialog {
+          width: 95vw !important;
+          max-width: 95vw !important;
+          margin: 1rem auto !important;
+        }
+        
+        /* Fixed Elements (Header/Footer) */
+        header {
+          position: sticky !important;
+          top: 0;
+          z-index: 50;
+        }
+        
+        /* Hide Unnecessary Elements on Mobile */
+        .hide-mobile {
+          display: none !important;
+        }
+        
+        /* Show Mobile-Only Elements */
+        .show-mobile {
+          display: block !important;
+        }
+        
+        /* File Upload Areas */
+        .file-upload {
+          padding: 1rem !important;
+          font-size: 0.875rem !important;
+        }
+        
+        /* Charts (if using recharts) */
+        .recharts-wrapper {
+          width: 100% !important;
+          height: auto !important;
+        }
+        
+        /* Spacing Adjustments */
+        .space-y-4 > * + * {
+          margin-top: 0.75rem !important;
+        }
+        
+        .space-y-6 > * + * {
+          margin-top: 1rem !important;
+        }
+        
+        /* Max Width Containers */
+        .max-w-7xl, .max-w-6xl, .max-w-5xl {
+          max-width: 100% !important;
+        }
+        
+        /* Scrollable Areas */
+        .h-96, .h-screen {
+          height: 70vh !important;
+        }
+      }
+      
+      /* Tablet Styles (768px to 1023px) */
+      @media (min-width: 768px) and (max-width: 1023px) {
+        .container {
+          padding-left: 1.5rem !important;
+          padding-right: 1.5rem !important;
+        }
+        
+        .grid {
+          grid-template-columns: repeat(2, 1fr) !important;
+        }
+        
+        table {
+          font-size: 0.875rem !important;
+        }
+      }
+      
+      /* Desktop Styles (1024px and above) - No changes needed */
+      @media (min-width: 1024px) {
+        /* Desktop styles remain unchanged */
+      }
+      
+      /* ========================
+         🖨️ PRINT STYLES
+         ======================== */
+      @media print {
+        @page { size: auto; margin: 5mm; }
+        .no-print { display: none !important; }
+        .print-only { display: block !important; }
+        
+        /* Reset Layout for Print: Force Block Flow */
+        body, html, #root, main, div {
+            width: 100% !important;
+            height: auto !important; 
+            margin: 0 !important; 
+            padding: 0 !important;
+            overflow: visible !important;
+            background-color: white !important;
+            display: block !important;
+            position: static !important;
+        }
+        
+        /* Specific overrides for grid/flex containers to behave as lists in print */
+        .grid, .flex {
+            display: block !important;
+        }
+        
+        /* Exception for small internal layouts like table headers if needed, but block is safer for page breaks */
+        
+        /* Expand scrollable areas */
+        .overflow-y-auto, .overflow-x-auto, .h-96, .h-screen {
+            height: auto !important;
+            max-height: none !important;
+            overflow: visible !important;
+        }
+
+        /* Hide Scrollbars */
+        ::-webkit-scrollbar { display: none; }
+        
+        /* Force background colors (important for headers/charts) */
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        
+        /* Page Break Rules */
+        .page-break { page-break-after: always; }
+        .break-inside-avoid { break-inside: avoid; }
+        
+        /* Table Styles */
+        table { width: 100% !important; border-collapse: collapse !important; }
+        th, td { border: 1px solid #000 !important; color: #000 !important; }
+        
+        /* Hide buttons within print view if not caught by no-print */
+        button { display: none !important; }
+      }
+    </style>
+
+  <script type="importmap">
+{
+  "imports": {
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "recharts": "https://aistudiocdn.com/recharts@^3.5.1"
+  }
+}
+</script>
+  <script type="module" crossorigin src="/assets/index-hGWGQH-K.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Ihuya4bT.css">
+</head>
+  <body class="bg-gray-50 text-gray-900 font-sans">
+    <div id="root"></div>
+</body>
+</html>
