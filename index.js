@@ -15,8 +15,9 @@ app.use(express.json({ limit: '50mb' }));
 const parseSupabaseUrl = (connectionString) => {
     try {
         const url = new URL(connectionString);
+        // Return explicit connection fields (DO NOT pass `connectionString`)
+        // because passing `connectionString` can cause the driver to ignore `family`.
         return {
-            connectionString,
             user: decodeURIComponent(url.username),
             password: decodeURIComponent(url.password),
             host: url.hostname,

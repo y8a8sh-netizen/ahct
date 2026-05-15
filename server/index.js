@@ -15,8 +15,9 @@ app.use(express.json({ limit: '50mb' }));
 const parseSupabaseUrl = (connectionString) => {
     try {
         const url = new URL(connectionString);
+        // Return explicit connection fields (do not pass `connectionString`)
+        // so that `family: 4` is honored by the pg client.
         return {
-            connectionString,
             user: decodeURIComponent(url.username),
             password: decodeURIComponent(url.password),
             host: url.hostname,
