@@ -257,7 +257,9 @@ app.get('/api/state', async (req, res) => {
         res.json(state);
     } catch (err) {
         console.error("Error fetching state:", err);
-        res.status(500).json({ error: "Failed to fetch data from database" });
+        console.error(err.stack || err);
+        // Include error message for debugging (remove in production)
+        res.status(500).json({ error: "Failed to fetch data from database", detail: err.message });
     }
 });
 
