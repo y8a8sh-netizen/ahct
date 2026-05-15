@@ -12,22 +12,44 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // PostgreSQL Database Setup - SUPABASE ONLY
-const dbConfig = process.env.SUPABASE_DB_URL
-  ? {
-      connectionString: process.env.SUPABASE_DB_URL,
-      ssl: { rejectUnauthorized: false },
+const parseSupabaseUrl = (connectionString) => {
+    try {
+        const url = new URL(connectionString);
+        return {
+            connectionString,
+            user: decodeURIComponent(url.username),
+            password: decodeURIComponent(url.password),
+            host: url.hostname,
+            port: Number(url.port || 5432),
+            database: url.pathname ? url.pathname.slice(1) : undefined,
+            ssl: { rejectUnauthorized: false },
+            family: 4,
+        };
+    } catch (error) {
+        console.error('❌ Invalid SUPABASE_DB_URL:', error.message);
+        return null;
     }
-  : {
-      user: process.env.SUPABASE_DB_USER || 'postgres',
-      host: process.env.SUPABASE_DB_HOST || 'db.vxsrcsunzttplulgunnz.supabase.co',
-      database: process.env.SUPABASE_DB_NAME || 'postgres',
-      password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
-      port: Number(process.env.SUPABASE_DB_PORT || 5432),
-      family: 4,
-      ssl: {
-        rejectUnauthorized: false,
-      },
+};
+
+const dbConfig = (() => {
+    const connectionString = process.env.SUPABASE_DB_URL;
+    if (connectionString) {
+        const parsed = parseSupabaseUrl(connectionString);
+        if (parsed) return parsed;
+    }
+
+    return {
+        user: process.env.SUPABASE_DB_USER || 'postgres',
+        host: process.env.SUPABASE_DB_HOST || 'db.vxsrcsunzttplulgunnz.supabase.co',
+        database: process.env.SUPABASE_DB_NAME || 'postgres',
+        password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
+        port: Number(process.env.SUPABASE_DB_PORT || 5432),
+        family: 4,
+        ssl: {
+            rejectUnauthorized: false,
+        },
     };
+})();
 
 const pool = new Pool(dbConfig);
 
@@ -42,9 +64,9 @@ pool.query('SELECT NOW()', (err, res) => {
         console.error('   2. اتصال الإنترنت');
         console.error('   3. أن قاعدة البيانات موجودة في Supabase');
         console.error('📝 بيانات الاتصال الحالية:');
-        console.error('   Host: db.vxsrcsunzttplulgunnz.supabase.co');
-        console.error('   User: postgres');
-        console.error('   Database: postgres');
+        console.error('   Host:', dbConfig.host);
+        console.error('   User:', dbConfig.user);
+        console.error('   Database:', dbConfig.database);
         isSupabaseConnected = false;
     } else {
         isSupabaseConnected = true;
