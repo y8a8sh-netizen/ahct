@@ -11,9 +11,11 @@ const PORT = Number(process.env.PORT || 3001);
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL;
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const useSupabaseClient = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
+const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+
+// تفضيل وضع HTTP client إذا كانت المفاتيح موجودة لتجنب مشاكل IPv6 في Render
+const useSupabaseClient = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_URL.startsWith('http'));
 const usePgClient = !useSupabaseClient && Boolean(DATABASE_URL || SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST);
 let supabase = null;
 
