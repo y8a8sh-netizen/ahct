@@ -76,6 +76,8 @@ const createPoolAndTest = async () => {
         console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase ✅ ✅ ✅');
         console.log('📅 وقت السيرفر:', res.rows[0].now);
         console.log('🌐 البيانات تُحفظ في Supabase الآن\n');
+        // Initialize DB schema after successful connection
+        await initDatabase();
     } catch (err) {
         console.error('❌❌❌ SUPABASE CONNECTION FAILED ❌❌❌');
         console.error('🔴 الخطأ:', err.message);
@@ -95,7 +97,7 @@ const createPoolAndTest = async () => {
 createPoolAndTest();
 
 // Initialize Database Schema
-const initDatabase = async () => {
+async function initDatabase() {
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -190,10 +192,7 @@ const initDatabase = async () => {
     } finally {
         client.release();
     }
-};
-
-// Initialize database on startup
-initDatabase();
+}
 
 // --- API ROUTES ---
 
