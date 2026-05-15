@@ -9,11 +9,12 @@ const os = require('os');
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
 
+const DATABASE_URL = process.env.DATABASE_URL;
 const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL;
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const useSupabaseClient = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
-const usePgClient = !useSupabaseClient && Boolean(SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST);
+const usePgClient = !useSupabaseClient && Boolean(DATABASE_URL || SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST);
 let supabase = null;
 
 // Middleware
@@ -42,7 +43,7 @@ const parseSupabaseUrl = (connectionString) => {
 };
 
 const dbConfig = (() => {
-    const connectionString = process.env.SUPABASE_DB_URL;
+    const connectionString = DATABASE_URL || process.env.SUPABASE_DB_URL;
     let config;
 
     if (connectionString) {
@@ -114,6 +115,15 @@ const resolveDbHostToIPv4 = async (host) => {
 
 const createPoolAndTest = async () => {
     try {
+        console.log('Database connection mode:', useSupabaseClient ? 'Supabase HTTP client' : usePgClient ? 'Direct PostgreSQL client' : 'None');
+        if (DATABASE_URL) {
+            console.log('Using DATABASE_URL for direct PostgreSQL connection.');
+        } else if (SUPABASE_DB_URL) {
+            console.log('Using SUPABASE_DB_URL for direct PostgreSQL connection.');
+        } else if (process.env.SUPABASE_DB_HOST) {
+            console.log('Using SUPABASE_DB_HOST for direct PostgreSQL connection.');
+        }
+
         if (useSupabaseClient) {
             createSupabaseClient();
             return;
