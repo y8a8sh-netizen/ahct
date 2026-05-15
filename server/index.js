@@ -13,10 +13,14 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL;
 const SUPABASE_URL = (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/$/, '');
 const SUPABASE_SERVICE_ROLE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const DATABASE_MODE = (process.env.DATABASE_MODE || '').trim().toLowerCase();
 
-// تفضيل وضع HTTP client إذا كانت المفاتيح موجودة لتجنب مشاكل IPv6 في Render
-const useSupabaseClient = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_URL.startsWith('http'));
-const usePgClient = !useSupabaseClient && Boolean(DATABASE_URL || SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST);
+const hasHttpKeys = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY && SUPABASE_URL.startsWith('http'));
+const hasPgConfig = Boolean(DATABASE_URL || SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST || process.env.SUPABASE_DB_PASSWORD);
+
+let useSupabaseClient = false;
+let usePgClient = false;
+let dbConnectionMode = 'none';
 let supabase = null;
 
 // Middleware
@@ -78,10 +82,27 @@ const dbConfig = (() => {
 let pool;
 let isSupabaseConnected = false;
 
-const createSupabaseClient = () => {
-    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+const isInvalidApiKeyError = (error) => {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('invalid api key') || message.includes('invalid jwt');
+};
+
+const verifySupabaseHttpClient = async () => {
+    const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
         auth: { persistSession: false },
     });
+    const { error } = await client.from('students').select('id').limit(1);
+    if (error && isInvalidApiKeyError(error)) {
+        return { ok: false, error };
+    }
+    return { ok: true, client, warning: error?.message };
+};
+
+const activateSupabaseHttpClient = (client) => {
+    supabase = client;
+    useSupabaseClient = true;
+    usePgClient = false;
+    dbConnectionMode = 'supabase-http';
     isSupabaseConnected = true;
     console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase عبر HTTP client ✅ ✅ ✅');
 };
@@ -115,63 +136,98 @@ const resolveDbHostToIPv4 = async (host) => {
     return host;
 };
 
-const createPoolAndTest = async () => {
-    try {
-        console.log('Database connection mode:', useSupabaseClient ? 'Supabase HTTP client' : usePgClient ? 'Direct PostgreSQL client' : 'None');
-        if (DATABASE_URL) {
-            console.log('Using DATABASE_URL for direct PostgreSQL connection.');
-        } else if (SUPABASE_DB_URL) {
-            console.log('Using SUPABASE_DB_URL for direct PostgreSQL connection.');
-        } else if (process.env.SUPABASE_DB_HOST) {
-            console.log('Using SUPABASE_DB_HOST for direct PostgreSQL connection.');
-        }
+const connectPostgres = async () => {
+    if (dbConfig.host) {
+        dbConfig.host = await resolveDbHostToIPv4(dbConfig.host);
+    }
 
-        if (useSupabaseClient) {
-            createSupabaseClient();
+    pool = new Pool({
+        ...dbConfig,
+        connectionTimeoutMillis: 30000,
+        idleTimeoutMillis: 30000,
+        ssl: dbConfig.ssl,
+    });
+
+    const res = await pool.query('SELECT NOW()');
+    useSupabaseClient = false;
+    usePgClient = true;
+    dbConnectionMode = 'postgres';
+    isSupabaseConnected = true;
+    console.log('\n✅ ✅ ✅ متصل بنجاح مع PostgreSQL ✅ ✅ ✅');
+    console.log('📅 وقت السيرفر:', res.rows[0].now);
+    console.log('🔌 وضع الاتصال: Direct PostgreSQL\n');
+    await initDatabase();
+};
+
+const logConnectionFailure = (err) => {
+    console.error('❌❌❌ SUPABASE CONNECTION FAILED ❌❌❌');
+    console.error('🔴 الخطأ:', err.message || err);
+    console.error('⚠️  تحقق من:');
+    console.error('   1. SUPABASE_DB_URL أو DATABASE_URL (مُفضّل على Render)');
+    console.error('   2. أو SUPABASE_DB_HOST + SUPABASE_DB_PASSWORD');
+    console.error('   3. أو SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY (service_role وليس anon)');
+    console.error('📝 بيانات الاتصال الحالية:');
+    console.error('   Host:', dbConfig.host);
+    console.error('   User:', dbConfig.user);
+    console.error('   Database:', dbConfig.database);
+    isSupabaseConnected = false;
+    dbConnectionMode = 'none';
+};
+
+const initDatabaseConnection = async () => {
+    const preferPg = DATABASE_MODE === 'pg' || DATABASE_MODE === 'postgres' || hasPgConfig;
+    const preferHttp = DATABASE_MODE === 'http' && hasHttpKeys;
+
+    try {
+        if (preferPg || !hasHttpKeys) {
+            console.log('Database init: trying PostgreSQL first');
+            await connectPostgres();
             return;
         }
 
-        if (!usePgClient) {
-            throw new Error('No supported database configuration found. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for Supabase HTTP mode, or SUPABASE_DB_URL / SUPABASE_DB_HOST for direct PG mode.');
+        if (preferHttp || hasHttpKeys) {
+            console.log('Database init: verifying Supabase HTTP client');
+            const verified = await verifySupabaseHttpClient();
+            if (verified.ok) {
+                if (verified.warning) {
+                    console.warn('Supabase HTTP connected with warning:', verified.warning);
+                }
+                activateSupabaseHttpClient(verified.client);
+                return;
+            }
+
+            console.warn('⚠️ Supabase HTTP key invalid or rejected. Falling back to PostgreSQL.');
+            console.warn('   Detail:', verified.error?.message || verified.error);
         }
 
-        if (dbConfig.host) {
-            dbConfig.host = await resolveDbHostToIPv4(dbConfig.host);
-        }
-
-        pool = new Pool({
-            ...dbConfig,
-            connectionTimeoutMillis: 30000,
-            idleTimeoutMillis: 30000,
-            ssl: dbConfig.ssl,
-        });
-
-        const res = await pool.query('SELECT NOW()');
-        isSupabaseConnected = true;
-        console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase ✅ ✅ ✅');
-        console.log('📅 وقت السيرفر:', res.rows[0].now);
-        console.log('🌐 البيانات تُحفظ في Supabase الآن\n');
-        // Initialize DB schema after successful connection
-        await initDatabase();
+        console.log('Database init: using PostgreSQL fallback');
+        await connectPostgres();
     } catch (err) {
-        console.error('❌❌❌ SUPABASE CONNECTION FAILED ❌❌❌');
-        console.error('🔴 الخطأ:', err.message || err);
-        console.error('⚠️  تحقق من:');
-        console.error('   1. بيانات الاتصال (SUPABASE_DB_URL أو SUPABASE_DB_HOST + SUPABASE_DB_USER + SUPABASE_DB_PASSWORD)');
-        console.error('   2. أن الاستضافة تسمح باتصال TCP على منفذ 5432');
-        console.error('   3. إن كانت الشبكة تدعم IPv4 ولا تحاول الاتصال عبر IPv6');
-        if (useSupabaseClient) {
-            console.error('   4. تأكد من أن SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY محددان بشكل صحيح');
+        if (hasHttpKeys && !preferPg) {
+            try {
+                console.warn('PostgreSQL failed, retrying Supabase HTTP as last attempt');
+                const verified = await verifySupabaseHttpClient();
+                if (verified.ok) {
+                    activateSupabaseHttpClient(verified.client);
+                    return;
+                }
+            } catch (httpErr) {
+                console.warn('Supabase HTTP retry failed:', httpErr.message || httpErr);
+            }
         }
-        console.error('📝 بيانات الاتصال الحالية:');
-        console.error('   Host:', dbConfig.host);
-        console.error('   User:', dbConfig.user);
-        console.error('   Database:', dbConfig.database);
-        isSupabaseConnected = false;
+        logConnectionFailure(err);
     }
 };
 
-createPoolAndTest();
+initDatabaseConnection();
+
+app.get('/api/health', (req, res) => {
+    res.json({
+        ok: isSupabaseConnected,
+        mode: dbConnectionMode,
+        host: dbConfig.host,
+    });
+});
 
 // Initialize Database Schema
 async function initDatabase() {
