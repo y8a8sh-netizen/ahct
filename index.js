@@ -23,6 +23,7 @@ const dbConfig = process.env.SUPABASE_DB_URL
       database: process.env.SUPABASE_DB_NAME || 'postgres',
       password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
       port: Number(process.env.SUPABASE_DB_PORT || 5432),
+      family: 4,
       ssl: {
         rejectUnauthorized: false,
       },
