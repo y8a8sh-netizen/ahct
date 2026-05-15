@@ -1,6 +1,10 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@theme {
+  --color-tvtc-green: #006d5b;
+  --color-tvtc-gold: #c9a227;
+  --font-sans: "Tajawal", ui-sans-serif, system-ui, sans-serif;
+}
 
 /* ========================
    📱 MOBILE-FIRST RESPONSIVE STYLES
