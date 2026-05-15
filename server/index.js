@@ -1,5 +1,6 @@
 
 const express = require('express');
+const { createClient } = require('@supabase/supabase-js');
 const { Pool } = require('pg');
 const dns = require('dns').promises;
 const cors = require('cors');
@@ -7,6 +8,13 @@ const os = require('os');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
+
+const SUPABASE_DB_URL = process.env.SUPABASE_DB_URL;
+const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const useSupabaseClient = Boolean(SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY);
+const usePgClient = !useSupabaseClient && Boolean(SUPABASE_DB_URL || process.env.SUPABASE_DB_HOST);
+let supabase = null;
 
 // Middleware
 app.use(cors());
@@ -67,29 +75,64 @@ const dbConfig = (() => {
 let pool;
 let isSupabaseConnected = false;
 
+const createSupabaseClient = () => {
+    supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false },
+    });
+    isSupabaseConnected = true;
+    console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase عبر HTTP client ✅ ✅ ✅');
+};
+
+const resolveDbHostToIPv4 = async (host) => {
+    if (!host || !/[a-zA-Z]/.test(host)) {
+        return host;
+    }
+
+    try {
+        const addrs = await dns.resolve4(host);
+        if (addrs && addrs.length > 0) {
+            console.log('Resolved DB host to IPv4 via resolve4:', addrs[0]);
+            return addrs[0];
+        }
+    } catch (err) {
+        console.warn('resolve4 failed for', host, err.message);
+    }
+
+    try {
+        const lookup = await dns.lookup(host, { family: 4, all: true });
+        if (Array.isArray(lookup) && lookup.length > 0) {
+            console.log('Resolved DB host to IPv4 via lookup:', lookup[0].address);
+            return lookup[0].address;
+        }
+    } catch (err) {
+        console.warn('lookup failed for', host, err.message);
+    }
+
+    console.warn('Could not resolve DB host to IPv4. Using original host:', host);
+    return host;
+};
+
 const createPoolAndTest = async () => {
     try {
-        if (dbConfig.host && /[a-zA-Z]/.test(dbConfig.host)) {
-            try {
-                const lookup = await dns.lookup(dbConfig.host, { family: 4 });
-                dbConfig.host = lookup.address;
-                console.log('Resolved DB host to IPv4 via lookup:', dbConfig.host);
-            } catch (e) {
-                try {
-                    const addrs = await dns.resolve4(dbConfig.host);
-                    if (addrs && addrs.length > 0) {
-                        dbConfig.host = addrs[0];
-                        console.log('Resolved DB host to IPv4 via resolve4:', dbConfig.host);
-                    } else {
-                        console.warn('resolve4 returned no addresses for', dbConfig.host);
-                    }
-                } catch (e2) {
-                    console.warn('Could not resolve DB host to IPv4 (lookup+resolve4) for', dbConfig.host, e.message, e2.message);
-                }
-            }
+        if (useSupabaseClient) {
+            createSupabaseClient();
+            return;
         }
 
-        pool = new Pool(dbConfig);
+        if (!usePgClient) {
+            throw new Error('No supported database configuration found. Set SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY for Supabase HTTP mode, or SUPABASE_DB_URL / SUPABASE_DB_HOST for direct PG mode.');
+        }
+
+        if (dbConfig.host) {
+            dbConfig.host = await resolveDbHostToIPv4(dbConfig.host);
+        }
+
+        pool = new Pool({
+            ...dbConfig,
+            connectionTimeoutMillis: 30000,
+            idleTimeoutMillis: 30000,
+            ssl: dbConfig.ssl,
+        });
 
         const res = await pool.query('SELECT NOW()');
         isSupabaseConnected = true;
@@ -100,11 +143,14 @@ const createPoolAndTest = async () => {
         await initDatabase();
     } catch (err) {
         console.error('❌❌❌ SUPABASE CONNECTION FAILED ❌❌❌');
-        console.error('🔴 الخطأ:', err.message);
+        console.error('🔴 الخطأ:', err.message || err);
         console.error('⚠️  تحقق من:');
-        console.error('   1. بيانات الاتصال (host, user, password, database)');
-        console.error('   2. اتصال الإنترنت');
-        console.error('   3. أن قاعدة البيانات موجودة في Supabase');
+        console.error('   1. بيانات الاتصال (SUPABASE_DB_URL أو SUPABASE_DB_HOST + SUPABASE_DB_USER + SUPABASE_DB_PASSWORD)');
+        console.error('   2. أن الاستضافة تسمح باتصال TCP على منفذ 5432');
+        console.error('   3. إن كانت الشبكة تدعم IPv4 ولا تحاول الاتصال عبر IPv6');
+        if (useSupabaseClient) {
+            console.error('   4. تأكد من أن SUPABASE_URL و SUPABASE_SERVICE_ROLE_KEY محددان بشكل صحيح');
+        }
         console.error('📝 بيانات الاتصال الحالية:');
         console.error('   Host:', dbConfig.host);
         console.error('   User:', dbConfig.user);
@@ -117,6 +163,11 @@ createPoolAndTest();
 
 // Initialize Database Schema
 async function initDatabase() {
+    if (useSupabaseClient) {
+        console.log('Skipping schema initialization in Supabase HTTP client mode. Ensure your tables exist in Supabase.');
+        return;
+    }
+
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
@@ -213,35 +264,86 @@ async function initDatabase() {
     }
 }
 
+async function fetchTable(table) {
+    if (useSupabaseClient) {
+        const { data, error } = await supabase.from(table).select('*');
+        if (error) throw error;
+        return data || [];
+    }
+
+    const result = await pool.query(`SELECT * FROM ${table}`);
+    return result.rows;
+}
+
+async function deleteAll(table, filterColumn) {
+    if (useSupabaseClient) {
+        const { error } = await supabase.from(table).delete().neq(filterColumn, '');
+        if (error) throw error;
+        return;
+    }
+    await pool.query(`DELETE FROM ${table} WHERE ${filterColumn} <> ''`);
+}
+
+async function bulkInsert(table, rows) {
+    if (!rows || rows.length === 0) return;
+
+    if (useSupabaseClient) {
+        const { error } = await supabase.from(table).insert(rows, { returning: 'minimal' });
+        if (error) throw error;
+        return;
+    }
+
+    const columns = Object.keys(rows[0]);
+    const values = [];
+    const placeholders = rows.map((row) => {
+        const rowPlaceholders = columns.map((column) => {
+            values.push(row[column] === undefined ? null : row[column]);
+            return `$${values.length}`;
+        });
+        return `(${rowPlaceholders.join(',')})`;
+    });
+
+    await pool.query(`INSERT INTO ${table} (${columns.join(',')}) VALUES ${placeholders.join(',')}`, values);
+}
+
 // --- API ROUTES ---
 
 // 1. GET Full State
 app.get('/api/state', async (req, res) => {
     try {
-        // Fetch all tables in parallel
-        const [students, studentCourses, exams, rooms, proctors, committees, commProctors, commStudents] = await Promise.all([
-            pool.query("SELECT * FROM students"),
-            pool.query("SELECT * FROM student_courses"),
-            pool.query("SELECT * FROM exams"),
-            pool.query("SELECT * FROM rooms"),
-            pool.query("SELECT * FROM proctors"),
-            pool.query("SELECT * FROM committees"),
-            pool.query("SELECT * FROM committee_proctors"),
-            pool.query("SELECT * FROM committee_students")
+        const [students, studentCourses, exams, rooms, proctors, committees, commProctors, commStudents, drafts] = await Promise.all([
+            fetchTable('students'),
+            fetchTable('student_courses'),
+            fetchTable('exams'),
+            fetchTable('rooms'),
+            fetchTable('proctors'),
+            fetchTable('committees'),
+            fetchTable('committee_proctors'),
+            fetchTable('committee_students'),
+            fetchTable('draft_schedules'),
         ]);
 
         const state = {};
+        const studentsData = students.rows || students;
+        const studentCoursesData = studentCourses.rows || studentCourses;
+        const examsData = exams.rows || exams;
+        const roomsData = rooms.rows || rooms;
+        const proctorsData = proctors.rows || proctors;
+        const committeesData = committees.rows || committees;
+        const commProctorsData = commProctors.rows || commProctors;
+        const commStudentsData = commStudents.rows || commStudents;
+        const draftsData = drafts.rows || drafts;
 
         // Reconstruct Students with Courses
-        state.students = students.rows.map(s => ({
+        state.students = studentsData.map(s => ({
             id: s.id,
             name: s.name,
             specialization: s.specialization,
-            courseCodes: studentCourses.rows.filter(sc => sc.studentid === s.id).map(sc => sc.coursecode)
+            courseCodes: studentCoursesData.filter(sc => sc.studentid === s.id).map(sc => sc.coursecode)
         }));
 
         // Exams, Rooms, Proctors (Direct mapping)
-        state.exams = exams.rows.map(e => ({
+        state.exams = examsData.map(e => ({
             courseCode: e.coursecode,
             courseName: e.coursename,
             date: e.date,
@@ -252,21 +354,20 @@ app.get('/api/state', async (req, res) => {
             specialization: e.specialization
         }));
         
-        state.rooms = rooms.rows;
-        state.proctors = proctors.rows;
+        state.rooms = roomsData;
+        state.proctors = proctorsData;
 
         // Reconstruct Committees
-        state.committees = committees.rows.map(c => ({
+        state.committees = committeesData.map(c => ({
             id: c.id,
             examCode: c.examcode,
             specialization: c.specialization,
             roomId: c.roomid,
-            proctorIds: commProctors.rows.filter(cp => cp.committeeid === c.id).map(cp => cp.proctorid),
-            studentIds: commStudents.rows.filter(cs => cs.committeeid === c.id).map(cs => cs.studentid)
+            proctorIds: commProctorsData.filter(cp => cp.committeeid === c.id).map(cp => cp.proctorid),
+            studentIds: commStudentsData.filter(cs => cs.committeeid === c.id).map(cs => cs.studentid)
         }));
 
-        const drafts = await pool.query("SELECT * FROM draft_schedules ORDER BY created_at DESC");
-        state.drafts = drafts.rows.map(d => ({
+        state.drafts = draftsData.map(d => ({
             id: d.id,
             name: d.name,
             createdAt: d.created_at,
@@ -286,7 +387,95 @@ app.get('/api/state', async (req, res) => {
 app.post('/api/sync', async (req, res) => {
     const data = req.body;
     console.log(`[${new Date().toLocaleTimeString()}] 📥 Received sync request (Committees: ${data.committees?.length || 0})`);
-    
+
+    if (useSupabaseClient) {
+        try {
+            await deleteAll('committee_students', 'committeeId');
+            await deleteAll('committee_proctors', 'committeeId');
+            await deleteAll('committees', 'id');
+            await deleteAll('student_courses', 'studentId');
+            await deleteAll('students', 'id');
+            await deleteAll('exams', 'courseCode');
+            await deleteAll('rooms', 'id');
+            await deleteAll('proctors', 'id');
+
+            await bulkInsert('exams', (data.exams || []).map((e) => ({
+                courseCode: e.courseCode,
+                courseName: e.courseName,
+                date: e.date,
+                time: e.time,
+                duration: e.duration,
+                type: e.type,
+                department: e.department || 'عام',
+                specialization: e.specialization || 'عام',
+            })));
+
+            await bulkInsert('rooms', (data.rooms || []).map((r) => ({
+                id: r.id,
+                name: r.name,
+                type: r.type,
+                capacity: r.capacity,
+            })));
+
+            await bulkInsert('proctors', (data.proctors || []).map((p) => ({
+                id: p.id,
+                name: p.name,
+                department: p.department || 'عام',
+            })));
+
+            await bulkInsert('students', (data.students || []).map((s) => ({
+                id: s.id,
+                name: s.name,
+                specialization: s.specialization || 'عام',
+            })));
+
+            await bulkInsert('student_courses', (data.students || []).flatMap((s) => (s.courseCodes || []).map((courseCode) => ({
+                studentId: s.id,
+                courseCode,
+            }))));
+
+            await bulkInsert('committees', (data.committees || []).map((c) => ({
+                id: c.id,
+                examCode: c.examCode,
+                roomId: c.roomId,
+                specialization: c.specialization || 'عام',
+            })));
+
+            await bulkInsert('committee_proctors', (data.committees || []).flatMap((c) => (c.proctorIds || []).map((pid) => ({
+                committeeId: c.id,
+                proctorId: pid,
+            }))));
+
+            await bulkInsert('committee_students', (data.committees || []).flatMap((c) => (c.studentIds || []).map((sid) => ({
+                committeeId: c.id,
+                studentId: sid,
+            }))));
+
+            if (Array.isArray(data.drafts)) {
+                await deleteAll('draft_schedules', 'id');
+                await bulkInsert('draft_schedules', data.drafts.map((d) => ({
+                    id: d.id,
+                    name: d.name,
+                    created_at: d.createdAt,
+                    payload: {
+                        startDate: d.startDate,
+                        examDays: d.examDays,
+                        periodsPerDay: d.periodsPerDay,
+                        duration: d.duration,
+                        periodConfigs: d.periodConfigs,
+                        courses: d.courses,
+                        slots: d.slots,
+                    },
+                })));
+            }
+
+            return res.json({ success: true, message: 'Database synchronized successfully' });
+        } catch (err) {
+            console.error('Error syncing data via Supabase HTTP client:', err);
+            return res.status(500).json({ error: err.message });
+        }
+    }
+
     const client = await pool.connect();
     
     try {
@@ -402,6 +591,60 @@ app.post('/api/sync', async (req, res) => {
 
 // 3. POST Load Demo Data (for testing when database is empty)
 app.post('/api/load-demo-data', async (req, res) => {
+    if (useSupabaseClient) {
+        try {
+            await deleteAll('committee_students', 'committeeId');
+            await deleteAll('committee_proctors', 'committeeId');
+            await deleteAll('committees', 'id');
+            await deleteAll('student_courses', 'studentId');
+            await deleteAll('students', 'id');
+            await deleteAll('exams', 'courseCode');
+            await deleteAll('rooms', 'id');
+            await deleteAll('proctors', 'id');
+
+            await bulkInsert('exams', [
+                { courseCode: 'CS101', courseName: 'Programming Basics', date: '2026-05-20', time: '09:00', duration: 120, type: 'Blackboard', department: 'IT', specialization: 'عام' },
+                { courseCode: 'CS102', courseName: 'Database Systems', date: '2026-05-21', time: '10:00', duration: 120, type: 'Online', department: 'IT', specialization: 'عام' },
+                { courseCode: 'ENG101', courseName: 'English Language', date: '2026-05-22', time: '11:00', duration: 90, type: 'Written', department: 'Languages', specialization: 'عام' },
+                { courseCode: 'MATH101', courseName: 'Advanced Mathematics', date: '2026-05-23', time: '14:00', duration: 120, type: 'Written', department: 'Sciences', specialization: 'عام' },
+            ]);
+
+            await bulkInsert('rooms', [
+                { id: 'ROOM101', name: 'Room 101', type: 'Classroom', capacity: 30 },
+                { id: 'ROOM102', name: 'Room 102', type: 'Classroom', capacity: 35 },
+                { id: 'ROOM103', name: 'Room 103', type: 'Lab', capacity: 25 },
+                { id: 'ROOM104', name: 'Room 104', type: 'Classroom', capacity: 40 },
+            ]);
+
+            await bulkInsert('proctors', [
+                { id: 'P001', name: 'Ahmed Mohamed', department: 'IT' },
+                { id: 'P002', name: 'Fatima Ali', department: 'IT' },
+                { id: 'P003', name: 'Mahmoud Salem', department: 'Languages' },
+                { id: 'P004', name: 'Lina Khalil', department: 'Sciences' },
+            ]);
+
+            const students = [
+                { id: 'S001', name: 'Ali Ahmed', specialization: 'عام' },
+                { id: 'S002', name: 'Sara Mohamed', specialization: 'عام' },
+                { id: 'S003', name: 'Mahmoud Ali', specialization: 'عام' },
+                { id: 'S004', name: 'Rihab Salem', specialization: 'عام' },
+                { id: 'S005', name: 'Khaled Hassan', specialization: 'عام' },
+            ];
+
+            await bulkInsert('students', students);
+            await bulkInsert('student_courses', students.flatMap((student) => [
+                { studentId: student.id, courseCode: 'CS101' },
+                { studentId: student.id, courseCode: 'CS102' },
+                { studentId: student.id, courseCode: 'ENG101' },
+            ]));
+
+            return res.json({ success: true, message: 'Demo data loaded successfully' });
+        } catch (err) {
+            console.error('Error loading demo data via Supabase HTTP client:', err);
+            return res.status(500).json({ error: err.message });
+        }
+    }
+
     const client = await pool.connect();
     
     try {
