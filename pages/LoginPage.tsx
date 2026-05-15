@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Lock, User, ShieldCheck, Users, UserCheck, BookOpen, ArrowRight, Key, LayoutGrid } from 'lucide-react';
 import { Student, Proctor, UserSession, UserRole } from '../types';
-
+import { loginStudent } from '../services/api';
 interface LoginPageProps {
   data: {
     students: Student[];
@@ -17,7 +17,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const inputUsername = username.trim();
@@ -25,7 +25,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
 
     if (!selectedRole) return;
 
-    // 1. Manager Authentication (Read-Write Access)
+    // 1. مدير النظام
     if (selectedRole === 'manager') {
         if (inputUsername === 'postgres' && inputPassword === 'admin123') {
             onLogin({ id: 'admin', name: 'مدير النظام', role: 'manager', readOnly: false });
@@ -35,7 +35,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
         return;
     }
 
-    // 2. Dept Head Authentication (Read-Only Access)
+    // 2. رئيس القسم
     if (selectedRole === 'dept_head') {
         if (inputPassword === 'DepAdmin') {
             onLogin({ id: 'dep_admin', name: 'رئيس الأقسام', role: 'dept_head', readOnly: true });
@@ -43,6 +43,27 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
             setError('كلمة المرور غير صحيحة');
         }
         return;
+    }
+
+    // 3. المتدرب (تعديل الربط مع السيرفر)
+    if (selectedRole === 'student') {
+        if (!inputPassword) {
+            setError('يرجى إدخال الرقم الأكاديمي');
+            return;
+        }
+
+        const result = await loginStudent(inputPassword);
+        
+        if (result && result.success) {
+            onLogin({ 
+                id: result.studentData.id, 
+                name: result.studentData.name, 
+                role: 'student', 
+                readOnly: true 
+            });
+        } else {
+            setError('الرقم الأكاديمي غير مسجل في النظام');
+        }
     }
   };
 
@@ -136,12 +157,15 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
                             key={role}
                             onClick={() => {
                                 if (role === 'student') {
-                                    // Immediate login for students (Read-Only)
-                                    onLogin({ id: 'guest-student', name: 'بوابة المتدربين', role: 'student', readOnly: true });
-                                } else if (role === 'proctor') {
-                                    // Immediate login for proctors (Read-Only)
-                                    onLogin({ id: 'guest-proctor', name: 'بوابة المراقبين', role: 'proctor', readOnly: true });
-                                } else {
+    // بدلاً من الدخول المباشر، نفتح واجهة إدخال الرقم الأكاديمي
+    setSelectedRole('student');
+    setError('');
+    setUsername('');
+    setPassword('');
+} else if (role === 'proctor') {
+    // المراقب يبقى دخول مباشر مؤقتاً كما كان في كودك
+    onLogin({ id: 'guest-proctor', name: 'بوابة المراقبين', role: 'proctor', readOnly: true });
+} else {
                                     // Require login for managers and dept heads
                                     setSelectedRole(role); 
                                     setError(''); 
