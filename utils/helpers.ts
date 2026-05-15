@@ -53,18 +53,9 @@ export const parseCSV = (content: string): any[] => {
   const lines = cleanContent.split('\n');
   if (lines.length < 2) return [];
 
-  // Detect delimiter based on the first line: semicolon, comma, tab, or pipe
+  // Detect delimiter based on the first line (Comma or Semicolon)
   const firstLine = lines[0];
-  let delimiter = ';';
-  if (firstLine.includes(';')) {
-    delimiter = ';';
-  } else if (firstLine.includes(',')) {
-    delimiter = ',';
-  } else if (firstLine.includes('\t')) {
-    delimiter = '\t';
-  } else if (firstLine.includes('|')) {
-    delimiter = '|';
-  }
+  const delimiter = firstLine.includes(';') ? ';' : ',';
 
   // Helper to process a line: split by delimiter and strip quotes
   const processLine = (line: string) => line.split(delimiter).map(val => val.trim().replace(/^"|"$/g, ''));

@@ -46,7 +46,6 @@ const App: React.FC = () => {
               console.log("✅ Loaded data from server (PostgreSQL database)");
           } else {
               // Server Offline -> Start with empty data, no localStorage fallback
-              setIsServerConnected(false);
               console.warn("⚠️ Server unreachable. Starting with empty data.");
               console.warn("💡 Please ensure PostgreSQL server is running.");
               setData(initialData);
@@ -69,10 +68,7 @@ const App: React.FC = () => {
               const serverData = await fetchSystemState();
               if (serverData) {
                   setData(serverData);
-                  setIsServerConnected(true);
                   console.log(`🔄 Data refreshed automatically at ${new Date().toLocaleTimeString()}`);
-              } else {
-                  setIsServerConnected(false);
               }
           }, 10000); // Refresh every 10 seconds
 
@@ -96,15 +92,8 @@ const App: React.FC = () => {
                   syncSystemState(data).then((success) => {
                       if (success) {
                           setLastSaved(new Date());
-                          setIsServerConnected(true);
-                      } else {
-                          console.warn("Sync failed: server returned error or was unreachable");
-                          setIsServerConnected(false);
                       }
-                  }).catch(err => {
-                      console.error("Sync failed", err);
-                      setIsServerConnected(false);
-                  });
+                  }).catch(err => console.error("Sync failed", err));
               }, 2000); // 2 second debounce
               return () => clearTimeout(timeoutId);
           }

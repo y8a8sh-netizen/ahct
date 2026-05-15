@@ -131,11 +131,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
                     const config = roleConfig[role];
                     const Icon = config.icon;
                     
-                    // 📱 Mobile: Show only student and proctor
-                    // 💻 Desktop: Show all roles
-                    const isMobileOnly = role === 'student' || role === 'proctor';
-                    const hideOnMobile = !isMobileOnly;
-                    
                     return (
                         <button 
                             key={role}
@@ -154,7 +149,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
                                     setPassword(''); 
                                 }
                             }}
-                            className={`bg-white p-4 sm:p-5 md:p-6 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-xl transition-all border border-gray-100 hover:border-tvtc-green group text-right flex items-center gap-3 sm:gap-4 md:gap-5 relative overflow-hidden active:scale-95 ${hideOnMobile ? 'hidden md:flex' : ''}`}
+                            className="bg-white p-4 sm:p-5 md:p-6 rounded-xl sm:rounded-2xl shadow-sm hover:shadow-xl transition-all border border-gray-100 hover:border-tvtc-green group text-right flex items-center gap-3 sm:gap-4 md:gap-5 relative overflow-hidden active:scale-95"
                         >
                             <div className={`absolute top-0 right-0 w-1 h-full ${config.color}`}></div>
                             <div className={`w-12 h-12 sm:w-14 sm:h-14 rounded-lg sm:rounded-xl ${config.color} text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform duration-300 flex-shrink-0`}>

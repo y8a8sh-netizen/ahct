@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { Upload, AlertCircle, CheckCircle, Play, PieChart, Activity, Trash2, Edit, Plus, X, Save, Download, Printer, Grid, FileDown, UserCheck, Share2, Smartphone, FileCheck } from 'lucide-react';
 import { parseCSV, validateSchedule, getDualDate, parseAnyDate } from '../utils/helpers';
 import { getAiAdvice } from '../services/geminiService';
-import { syncSystemState } from '../services/api';
 import { Student, Exam, Room, Proctor, Committee, Conflict } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -34,8 +33,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState<any>(null);
   const [previewType, setPreviewType] = useState<string>('');
-  const [isUploadLoading, setIsUploadLoading] = useState(false);
-  const [uploadStatusMessage, setUploadStatusMessage] = useState('');
 
   // Room Management State
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
@@ -87,9 +84,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setIsUploadLoading(true);
-    setUploadStatusMessage('جاري قراءة الملف...');
-
     // Capture the input element to reset it later
     const inputElement = e.target;
 
@@ -98,9 +92,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
       const text = event.target?.result as string;
       const parsed = parseCSV(text);
       
-      // Keep existing committees intact while uploading base data.
-      // اللجان الحالية تبقى حتى يقوم المدير بتوزيعها من جديد.
-      let newData: any = {};
+      // Always clear committees when uploading new base data to avoid inconsistencies
+      let newData: any = { committees: [] };
 
       if (type === 'exams') {
           // Deduplicate Exams based on Course Code AND Specialization to allow same code for diff specs
@@ -199,16 +192,13 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
 
            newData.students = cleanedStudents;
       } else if (type === 'rooms') {
-          const uploadTime = Date.now();
           newData.rooms = parsed.map((row: any, idx: number) => {
-                  const name = row['name'] || row['Name'] || row['roomName'] || row['RoomName'] || row['Location'] || row['Room'] || row['room'] || row['القاعة'] || row['اسم_القاعة'] || row['اسم القاعة'] || `Room ${idx + 1}`;
-              const rawType = String(row['Type'] || row['type'] || row['RoomType'] || row['roomType'] || row['نوع'] || row['نوع القاعة'] || '').trim();
-              const normalizedType = rawType.toLowerCase();
+              const name = row['Location'] || row['Name'] || row['القاعة'] || `Room ${idx + 1}`;
               return {
-                    id: `room-${uploadTime}-${idx}`,
+                id: `room-${idx}`,
                 name: name,
-                type: (normalizedType.includes('معمل') || normalizedType.includes('lab') || name.includes('معمل')) ? 'Lab' : 'Hall',
-                capacity: parseInt(row['capacity'] || row['Capacity'] || row['سعة'] || row['السعة'] || '30')
+                type: (String(row['Type'] || row['نوع'] || '').includes('معمل') || name.includes('معمل')) ? 'Lab' : 'Hall',
+                capacity: parseInt(row['capacity'] || row['Capacity'] || row['سعة'] || '30')
               };
           }).filter((r: any) => r.name);
       } else if (type === 'proctors') {
@@ -223,49 +213,20 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
       setPreviewData(newData);
       setPreviewType(type);
       setShowPreview(true);
-      setIsUploadLoading(false);
-      setUploadStatusMessage('');
 
       // Reset the file input
       inputElement.value = '';
     };
-
-    reader.onerror = () => {
-      setIsUploadLoading(false);
-      setUploadStatusMessage('حدث خطأ أثناء قراءة الملف. حاول مرة أخرى.');
-      alert('تعذر قراءة الملف. يرجى التأكد من أن الملف بصيغة CSV وصالح.');
-    };
-
     reader.readAsText(file);
   };
 
-  const handleConfirmUpload = async () => {
+  const handleConfirmUpload = () => {
     if (previewData) {
-        setIsUploadLoading(true);
-        setUploadStatusMessage('جاري حفظ البيانات...');
-
-        const mergedState = {
-            ...data,
-            ...previewData
-        };
-
-        setData(mergedState);
+        setData((prev: any) => ({ ...prev, ...previewData }));
         setShowPreview(false);
         setPreviewData(null);
-
-        const syncSuccess = await syncSystemState(mergedState);
-        if (!syncSuccess) {
-            setUploadStatusMessage('تم حفظ البيانات محلياً لكن فشلت المزامنة مع الخادم. تحقق من تشغيل السيرفر.');
-            console.warn('Upload sync failed for manager upload.');
-        } else {
-            setUploadStatusMessage('تم حفظ البيانات والمزامنة مع الخادم بنجاح.');
-        }
-
-        setTimeout(() => {
-            setIsUploadLoading(false);
-            setUploadStatusMessage('');
-            alert('تم استيراد البيانات بنجاح. يمكنك الآن الانتقال لخطوة توزيع اللجان.');
-        }, 200);
+        // Hint for user
+        setTimeout(() => alert('تم استيراد البيانات بنجاح. يمكنك الآن الانتقال لخطوة توزيع اللجان.'), 300);
     }
   };
 
@@ -358,7 +319,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
             filename = 'template_students.csv';
             break;
         case 'rooms':
-            headers = 'name;capacity;type';
+            headers = 'Location;capacity;Type';
             sample = 'معمل 1;25;معمل\nقاعة 101;40;قاعة';
             filename = 'template_rooms.csv';
             break;
@@ -380,7 +341,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     document.body.removeChild(link);
   };
 
-  const handleResetSystem = async () => {
+  const handleResetSystem = () => {
     if (window.confirm('⚠️ تحذير شديد:\n\nهل أنت متأكد من رغبتك في تصفير النظام بالكامل؟\nسيتم حذف جميع بيانات المتدربين والاختبارات والجداول واللجان نهائياً.\n\nلا يمكن التراجع عن هذا الإجراء.')) {
       if (window.confirm('تأكيد نهائي:\nهل أنت متأكد من الحذف؟')) {
          const emptyState = {
@@ -388,17 +349,12 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
             exams: [],
             rooms: [],
             proctors: [],
-            committees: [],
-            drafts: []
+            committees: []
          };
          setData(emptyState);
-
-         const synced = await syncSystemState(emptyState);
-         if (synced) {
-             alert('تم تصفير النظام بنجاح ومزامنة البيانات مع السحابة.');
-         } else {
-             alert('تم تصفير النظام محلياً، لكن حدث خطأ أثناء مزامنة السحابة. حاول تحديث الصفحة أو إعادة المحاولة.');
-         }
+         setTimeout(() => {
+             alert('تم تصفير النظام بنجاح.');
+         }, 500);
       }
     }
   };
@@ -1463,12 +1419,6 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                       <Upload size={20} className="text-tvtc-green"/> رفع الملفات (CSV)
                   </h3>
                   <div className="space-y-6">
-                      {isUploadLoading && (
-                        <div className="rounded-lg border border-tvtc-green/30 bg-tvtc-green/10 p-3 text-sm text-tvtc-green flex items-center gap-3">
-                          <Activity size={18} className="animate-spin" />
-                          <span>{uploadStatusMessage || 'جاري التحميل...'}</span>
-                        </div>
-                      )}
                       <div>
                           <div className="flex justify-between items-end mb-1">
                               <label className="block text-sm font-medium">ملف الاختبارات</label>
