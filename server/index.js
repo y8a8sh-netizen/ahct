@@ -841,7 +841,33 @@ function getLocalIp() {
     }
     return 'localhost';
 }
+// مسار تسجيل الدخول للمتدرب
+app.post('/api/student-login', async (req, res) => {
+    const { studentId } = req.body;
 
+    try {
+        // التحقق من وجود الطالب في جدول students
+        const result = await pool.query("SELECT * FROM students WHERE id = $1", [studentId]);
+
+        if (result.rows.length > 0) {
+            const student = result.rows[0];
+            res.json({
+                success: true,
+                role: 'student',
+                studentData: student,
+                redirectUrl: '/student' // الرابط الذي طلبته
+            });
+        } else {
+            res.status(401).json({ 
+                success: false, 
+                message: "الرقم الأكاديمي غير مسجل" 
+            });
+        }
+    } catch (err) {
+        console.error("Login Error:", err);
+        res.status(500).json({ error: "خطأ في الخادم" });
+    }
+});
 app.listen(PORT, '0.0.0.0', () => {
     const ip = getLocalIp();
     console.log(`Server running on port ${PORT}`);
