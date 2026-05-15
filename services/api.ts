@@ -46,3 +46,32 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
         return false;
     }
 };
+// دالة تسجيل دخول المتدرب الجديدة
+export const loginStudent = async (studentId: string): Promise<{
+    success: boolean;
+    role: string;
+    studentData: any;
+    redirectUrl: string;
+    message?: string;
+} | null> => {
+    try {
+        const url = `${getApiUrl()}/student-login`; // سيقوم بطلب المسار الذي أنشأناه في السيرفر
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ studentId }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'فشل تسجيل الدخول');
+        }
+
+        return await response.json();
+    } catch (error) {
+        console.error('Login Error:', error instanceof Error ? error.message : error);
+        return null;
+    }
+};
