@@ -35,22 +35,33 @@ const parseSupabaseUrl = (connectionString) => {
 
 const dbConfig = (() => {
     const connectionString = process.env.SUPABASE_DB_URL;
+    let config;
+
     if (connectionString) {
         const parsed = parseSupabaseUrl(connectionString);
-        if (parsed) return parsed;
+        if (parsed) config = parsed;
     }
 
-    return {
-        user: process.env.SUPABASE_DB_USER || 'postgres',
-        host: process.env.SUPABASE_DB_HOST || 'db.vxsrcsunzttplulgunnz.supabase.co',
-        database: process.env.SUPABASE_DB_NAME || 'postgres',
-        password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
-        port: Number(process.env.SUPABASE_DB_PORT || 5432),
-        family: 4,
-        ssl: {
-            rejectUnauthorized: false,
-        },
-    };
+    if (!config) {
+        config = {
+            user: process.env.SUPABASE_DB_USER || 'postgres',
+            host: process.env.SUPABASE_DB_HOST || 'db.vxsrcsunzttplulgunnz.supabase.co',
+            database: process.env.SUPABASE_DB_NAME || 'postgres',
+            password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
+            port: Number(process.env.SUPABASE_DB_PORT || 5432),
+            ssl: {
+                rejectUnauthorized: false,
+            },
+            family: 4,
+        };
+    }
+
+    if (process.env.SUPABASE_DB_HOST_IPV4) {
+        config.host = process.env.SUPABASE_DB_HOST_IPV4;
+        console.log('SUPABASE_DB_HOST_IPV4 override detected:', config.host);
+    }
+
+    return config;
 })();
 
 let pool;
