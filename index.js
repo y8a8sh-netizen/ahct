@@ -63,9 +63,19 @@ const createPoolAndTest = async () => {
             try {
                 const lookup = await dns.lookup(dbConfig.host, { family: 4 });
                 dbConfig.host = lookup.address;
-                console.log('Resolved DB host to IPv4:', dbConfig.host);
+                console.log('Resolved DB host to IPv4 via lookup:', dbConfig.host);
             } catch (e) {
-                console.warn('Could not resolve DB host to IPv4, proceeding with original host:', dbConfig.host, e.message);
+                try {
+                    const addrs = await dns.resolve4(dbConfig.host);
+                    if (addrs && addrs.length > 0) {
+                        dbConfig.host = addrs[0];
+                        console.log('Resolved DB host to IPv4 via resolve4:', dbConfig.host);
+                    } else {
+                        console.warn('resolve4 returned no addresses for', dbConfig.host);
+                    }
+                } catch (e2) {
+                    console.warn('Could not resolve DB host to IPv4 (lookup+resolve4) for', dbConfig.host, e.message, e2.message);
+                }
             }
         }
 
