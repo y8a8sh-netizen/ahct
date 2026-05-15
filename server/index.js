@@ -2,9 +2,19 @@
 const express = require('express');
 const { createClient } = require('@supabase/supabase-js');
 const { Pool } = require('pg');
-const dns = require('dns').promises;
+const dns = require('dns');
+const dnsPromises = dns.promises;
 const cors = require('cors');
 const os = require('os');
+
+// Render وغيره قد يفشلون مع IPv6 — نفضّل IPv4 دائماً
+if (typeof dns.setDefaultResultOrder === 'function') {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
+const DEFAULT_SUPABASE_PROJECT_REF = 'vxsrcsunzttplulgunnz';
+const DEFAULT_POOLER_HOST = 'aws-0-eu-west-1.pooler.supabase.com';
+const DEFAULT_POOLER_PORT = 6543;
 
 const app = express();
 const PORT = Number(process.env.PORT || 3001);
@@ -58,17 +68,25 @@ const dbConfig = (() => {
     }
 
     if (!config) {
+        const usePooler = process.env.SUPABASE_USE_POOLER !== 'false';
+        const poolerHost = process.env.SUPABASE_POOLER_HOST || DEFAULT_POOLER_HOST;
+        const projectRef = process.env.SUPABASE_PROJECT_REF || DEFAULT_SUPABASE_PROJECT_REF;
+
         config = {
-            user: process.env.SUPABASE_DB_USER || 'postgres',
-            host: process.env.SUPABASE_DB_HOST || 'db.vxsrcsunzttplulgunnz.supabase.co',
+            user: process.env.SUPABASE_DB_USER || (usePooler ? `postgres.${projectRef}` : 'postgres'),
+            host: process.env.SUPABASE_DB_HOST || (usePooler ? poolerHost : `db.${projectRef}.supabase.co`),
             database: process.env.SUPABASE_DB_NAME || 'postgres',
             password: process.env.SUPABASE_DB_PASSWORD || 'Admin@tvtc@1436',
-            port: Number(process.env.SUPABASE_DB_PORT || 5432),
+            port: Number(process.env.SUPABASE_DB_PORT || (usePooler ? DEFAULT_POOLER_PORT : 5432)),
             ssl: {
                 rejectUnauthorized: false,
             },
             family: 4,
         };
+
+        if (usePooler) {
+            console.log('Using Supabase connection pooler (IPv4-friendly):', config.host);
+        }
     }
 
     if (process.env.SUPABASE_DB_HOST_IPV4) {
@@ -113,7 +131,7 @@ const resolveDbHostToIPv4 = async (host) => {
     }
 
     try {
-        const addrs = await dns.resolve4(host);
+        const addrs = await dnsPromises.resolve4(host);
         if (addrs && addrs.length > 0) {
             console.log('Resolved DB host to IPv4 via resolve4:', addrs[0]);
             return addrs[0];
@@ -123,7 +141,7 @@ const resolveDbHostToIPv4 = async (host) => {
     }
 
     try {
-        const lookup = await dns.lookup(host, { family: 4, all: true });
+        const lookup = await dnsPromises.lookup(host, { family: 4, all: true });
         if (Array.isArray(lookup) && lookup.length > 0) {
             console.log('Resolved DB host to IPv4 via lookup:', lookup[0].address);
             return lookup[0].address;
