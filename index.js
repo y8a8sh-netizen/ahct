@@ -1,6 +1,7 @@
 
 const express = require('express');
 const { Pool } = require('pg');
+const dns = require('dns').promises;
 const cors = require('cors');
 const os = require('os');
 
@@ -52,12 +53,30 @@ const dbConfig = (() => {
     };
 })();
 
-const pool = new Pool(dbConfig);
-
-// Test connection
+let pool;
 let isSupabaseConnected = false;
-pool.query('SELECT NOW()', (err, res) => {
-    if (err) {
+
+const createPoolAndTest = async () => {
+    try {
+        // If host is a hostname, resolve to IPv4 address to avoid IPv6 ENETUNREACH
+        if (dbConfig.host && /[a-zA-Z]/.test(dbConfig.host)) {
+            try {
+                const lookup = await dns.lookup(dbConfig.host, { family: 4 });
+                dbConfig.host = lookup.address;
+                console.log('Resolved DB host to IPv4:', dbConfig.host);
+            } catch (e) {
+                console.warn('Could not resolve DB host to IPv4, proceeding with original host:', dbConfig.host, e.message);
+            }
+        }
+
+        pool = new Pool(dbConfig);
+
+        const res = await pool.query('SELECT NOW()');
+        isSupabaseConnected = true;
+        console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase ✅ ✅ ✅');
+        console.log('📅 وقت السيرفر:', res.rows[0].now);
+        console.log('🌐 البيانات تُحفظ في Supabase الآن\n');
+    } catch (err) {
         console.error('❌❌❌ SUPABASE CONNECTION FAILED ❌❌❌');
         console.error('🔴 الخطأ:', err.message);
         console.error('⚠️  تحقق من:');
@@ -69,13 +88,11 @@ pool.query('SELECT NOW()', (err, res) => {
         console.error('   User:', dbConfig.user);
         console.error('   Database:', dbConfig.database);
         isSupabaseConnected = false;
-    } else {
-        isSupabaseConnected = true;
-        console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase ✅ ✅ ✅');
-        console.log('📅 وقت السيرفر:', res.rows[0].now);
-        console.log('🌐 البيانات تُحفظ في Supabase الآن\n');
     }
-});
+};
+
+// Start pool creation and testing immediately
+createPoolAndTest();
 
 // Initialize Database Schema
 const initDatabase = async () => {
