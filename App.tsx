@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Layout from './components/Layout';
 import ManagerDashboard from './pages/ManagerDashboard';
 import StudentPortal from './pages/StudentPortal';
@@ -11,6 +11,9 @@ import AdminScheduleEditor from './pages/AdminScheduleEditor';
 import { Student, Exam, Room, Proctor, Committee, DraftSchedule, SystemState, UserSession } from './types';
 import PrintProctorSchedules from './pages/PrintProctorSchedules';
 import { fetchSystemState, syncSystemState } from './services/api';
+import { getPortalFromPath, setPortalPath, createGuestPortalSession } from './utils/routes';
+
+const portalOnLoad = getPortalFromPath(window.location.pathname);
 
 // Initial Mock Data
 const initialData: SystemState = {
@@ -23,13 +26,21 @@ const initialData: SystemState = {
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
-  const [activeTab, setActiveTab] = useState('manager');
-  const [data, setData] = useState<SystemState>(initialData);
-  
-  const [isServerConnected, setIsServerConnected] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
+      if (portalOnLoad) {
+          localStorage.removeItem('tvtc_exam_system');
+          return createGuestPortalSession(portalOnLoad);
+      }
+      return null;
+  });
+  const [activeTab, setActiveTab] = useState(() =>
+      portalOnLoad === 'student' ? 'student' : portalOnLoad === 'proctor' ? 'proctor' : 'manager'
+  );
+  const [data, setData] = useState<SystemState>(initialData);
+  
+  const [isServerConnected, setIsServerConnected] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
 
   // 1. Initialize Data (Server is the ONLY source of truth)
   useEffect(() => {
@@ -100,30 +111,37 @@ const App: React.FC = () => {
       }
   }, [data, isServerConnected, isInitialized, currentUser]);
 
-  // Handle Login Logic
-  const handleLogin = (user: UserSession) => {
-      setCurrentUser(user);
-      
-      // Clear localStorage for read-only users to prevent old data pollution
-      if (user.readOnly) {
-          localStorage.removeItem('tvtc_exam_system');
-          console.log("🔒 Read-only user: localStorage cleared to prevent data conflicts");
-      }
-      
-      // Route to appropriate page based on role
-      switch (user.role) {
-          case 'manager': setActiveTab('manager'); break;
-          case 'dept_head': setActiveTab('dept'); break;
-          case 'proctor': setActiveTab('proctor'); break;
-          case 'student': setActiveTab('student'); break;
-          default: setActiveTab('manager');
-      }
-  };
+  // Handle Login Logic
+  const handleLogin = useCallback((user: UserSession) => {
+      setCurrentUser(user);
+      
+      // Clear localStorage for read-only users to prevent old data pollution
+      if (user.readOnly) {
+          localStorage.removeItem('tvtc_exam_system');
+          console.log("🔒 Read-only user: localStorage cleared to prevent data conflicts");
+      }
+      
+      // Route to appropriate page based on role
+      switch (user.role) {
+          case 'manager': setActiveTab('manager'); break;
+          case 'dept_head': setActiveTab('dept'); break;
+          case 'proctor': setActiveTab('proctor'); break;
+          case 'student': setActiveTab('student'); break;
+          default: setActiveTab('manager');
+      }
 
-  const handleLogout = () => {
-      setCurrentUser(null);
-      setActiveTab('manager');
-  };
+      if (user.role === 'student' || user.role === 'proctor') {
+          setPortalPath(user.role);
+      } else {
+          setPortalPath(null);
+      }
+  }, []);
+
+  const handleLogout = useCallback(() => {
+      setCurrentUser(null);
+      setActiveTab('manager');
+      setPortalPath(null);
+  }, []);
 
   // If not logged in, show Login Page
   if (!currentUser) {
