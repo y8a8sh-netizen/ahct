@@ -43,8 +43,9 @@ const App: React.FC = () => {
   const [isServerConnected, setIsServerConnected] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [portalResetKey, setPortalResetKey] = useState(0);
 
-  // 1. Initialize Data (Server is the ONLY source of truth)
+  // 1. Initialize Data (Server is the ONLY source of truth)
   useEffect(() => {
       const initData = async () => {
           // Try fetching from Server
@@ -140,10 +141,18 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogout = useCallback(() => {
+      const role = currentUser?.role;
+      if (role === 'student' || role === 'proctor') {
+          setPortalPath(role);
+          setActiveTab(role);
+          setCurrentUser(createGuestPortalSession(role));
+          setPortalResetKey((k) => k + 1);
+          return;
+      }
       setCurrentUser(null);
       setActiveTab('manager');
       setPortalPath(null);
-  }, []);
+  }, [currentUser]);
 
   // Fallback: open portal when URL is /student or /proctor
   useEffect(() => {
@@ -184,12 +193,12 @@ const App: React.FC = () => {
             {activeTab === 'dept' && (currentUser.role === 'manager' || currentUser.role === 'dept_head') && (
                 <DeptHeadPortal data={data} />
             )}
-            {activeTab === 'proctor' && (currentUser.role === 'manager' || currentUser.role === 'proctor') && (
-                <ProctorPortal data={data} />
-            )}
-            {activeTab === 'student' && (currentUser.role === 'manager' || currentUser.role === 'student') && (
-                <StudentPortal data={data} />
-            )}
+            {activeTab === 'proctor' && (currentUser.role === 'manager' || currentUser.role === 'proctor') && (
+                <ProctorPortal key={`proctor-${portalResetKey}`} data={data} />
+            )}
+            {activeTab === 'student' && (currentUser.role === 'manager' || currentUser.role === 'student') && (
+                <StudentPortal key={`student-${portalResetKey}`} data={data} />
+            )}
       
       {/* Connection Status Indicator */}
       <div className="fixed bottom-4 left-4 z-50 print:hidden flex flex-col gap-1 items-start">
