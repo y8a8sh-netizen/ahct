@@ -3,7 +3,7 @@ services:
     name: ahct
     runtime: node
     rootDir: server
-    buildCommand: npm install
+    buildCommand: npm install && node -e "require('bcryptjs'); require('jsonwebtoken'); console.log('deps ok')"
     startCommand: npm start
     envVars:
       - key: DATABASE_URL
