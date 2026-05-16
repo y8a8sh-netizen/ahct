@@ -24,6 +24,11 @@ export function setPortalPath(role: PortalRole | null): void {
   }
 }
 
+export function getPortalUrl(role: PortalRole): string {
+  if (typeof window === 'undefined') return PORTAL_PATHS[role];
+  return `${window.location.origin}${PORTAL_PATHS[role]}`;
+}
+
 export function createGuestPortalSession(role: PortalRole) {
   return role === 'student'
     ? { id: 'guest-student', name: 'بوابة المتدربين', role: 'student' as const, readOnly: true }

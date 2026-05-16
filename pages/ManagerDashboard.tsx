@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Upload, AlertCircle, CheckCircle, Play, PieChart, Activity, Trash2, Edit, Plus, X, Save, Download, Printer, Grid, FileDown, UserCheck, Share2, Smartphone, FileCheck } from 'lucide-react';
 import { parseCSV, validateSchedule, getDualDate, parseAnyDate } from '../utils/helpers';
+import { getPortalUrl } from '../utils/routes';
 import { getAiAdvice } from '../services/geminiService';
 import { Student, Exam, Room, Proctor, Committee, Conflict } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -720,11 +721,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
         }).sort((a, b) => b.count - a.count);
     };
 
-  const getShareLink = () => {
-      const hostname = window.location.hostname;
-      const port = window.location.port || '3000';
-      return `http://${hostname}:${port}`;
-  };
+  const getShareLink = () => getPortalUrl('student');
 
   // ===== NEW: Student Management Functions =====
   
@@ -1297,9 +1294,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                   </div>
                   <h3 className="text-2xl font-bold mb-2">رابط الدخول للمتدربين</h3>
                   <p className="text-gray-600 mb-6">
-                      قم بإرسال الرابط التالي للمتدربين ليتمكنوا من استعراض جداولهم عبر هواتفهم.
-                      <br/>
-                      <span className="text-sm text-red-500">ملاحظة: يجب أن يكون المتدرب متصلاً بنفس شبكة الإنترنت (Wi-Fi).</span>
+                      قم بإرسال الرابط التالي للمتدربين ليتمكنوا من الدخول مباشرة إلى بوابة المتدربين واستعراض جداولهم.
                   </p>
                   
                   <div className="bg-gray-100 p-4 rounded-lg border-2 border-dashed border-gray-300 mb-6 select-all">
