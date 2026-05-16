@@ -4,7 +4,8 @@
 import React, { useState } from 'react';
 import { Search, Calendar, Clock, MapPin, Printer } from 'lucide-react';
 import { Student, Exam, Committee, Room } from '../types';
-import { getArabicDayName } from '../utils/helpers';
+import { formatScheduleDateHtml } from '../utils/helpers';
+import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
 
 interface StudentPortalProps {
   data: {
@@ -63,7 +64,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
     const rowsHtml = schedule.map((exam, index) => `
         <tr>
             <td style="text-align:center">${index + 1}</td>
-            <td>${exam.date}<br><small style="color:#006d5b;font-weight:bold">${getArabicDayName(exam.date)}</small></td>
+            <td>${formatScheduleDateHtml(exam.date)}</td>
             <td>${exam.time}</td>
             <td><strong>${exam.courseName}</strong><br><small style="color:#666">${exam.courseCode}</small></td>
             <td>${exam.roomName}</td>
@@ -84,17 +85,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
         <style>
           @page { size: A4; margin: 20mm; }
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; color: #333; }3">
-                <div>
-                    <h3 className="font-bold text-base sm:text-lg">جدول المتدرب: {studentId}</h3>
-                    <span className="text-xs sm:text-sm bg-tvtc-gold px-3 py-1.5 rounded-full font-bold inline-block mt-1">{schedule.length} اختبارات</span>
-                </div>
-                <button 
-                    onClick={handlePrint}
-                    className="bg-tvtc-gold text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-yellow-600 text-sm font-bold shadow-lg w-full sm:w-auto justify-center transition-all hover:scale-105"
-                >
-                    <Printer size={18}/> طباعة الجدول
-                </butto
+          body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; direction: rtl; color: #333; }
           .header h1 { color: #006d5b; font-size: 24px; margin-bottom: 5px; }
           .header h2 { color: #555; font-size: 18px; font-weight: normal; }
           
@@ -232,8 +223,13 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
                                         <Calendar size={14}/>
                                         <span className="text-xs font-bold">التاريخ</span>
                                     </div>
-                                    <div className="text-sm font-medium text-gray-800">{exam.date}</div>
-                                    <div className="text-xs text-tvtc-green font-bold mt-0.5">{getArabicDayName(exam.date)}</div>
+                                                                        <ScheduleDateDisplay
+                                        date={exam.date}
+                                        dayClassName="text-xs text-tvtc-green font-bold"
+                                        gregClassName="text-sm font-medium text-gray-800"
+                                        hijriClassName="text-xs text-gray-500 mt-0.5"
+                                    />
+                                    <div className="text-xs text-tvtc-green font-bold mt-0.5"><ScheduleDateDisplay date={exam.date} /></div>
                                 </div>
                                 <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-200">
                                     <div className="flex items-center gap-1.5 text-orange-700 mb-1">
@@ -277,8 +273,10 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
                                     <span className="text-xs text-gray-500 block">{exam.courseCode}</span>
                                 </td>
                                 <td className="p-4 text-tvtc-green font-medium">
-                                    <div className="flex items-center gap-2"><Calendar size={16}/> {exam.date}</div>
-                                    <div className="text-xs text-gray-600 mr-6">{getArabicDayName(exam.date)}</div>
+                                    <div className="flex items-start gap-2">
+                                        <Calendar size={16} className="mt-1 flex-shrink-0" />
+                                        <ScheduleDateDisplay date={exam.date} />
+                                    </div>
                                 </td>
                                 <td className="p-4">
                                      <div className="flex items-center gap-2"><Clock size={16}/> {exam.time}</div>

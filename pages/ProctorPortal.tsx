@@ -4,7 +4,8 @@
 import React, { useState } from 'react';
 import { Search, Calendar, Clock, MapPin, Printer, UserCheck } from 'lucide-react';
 import { Student, Exam, Committee, Room, Proctor } from '../types';
-import { getArabicDayName } from '../utils/helpers';
+import { formatScheduleDateHtml } from '../utils/helpers';
+import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
 
 interface ProctorPortalProps {
   data: {
@@ -102,7 +103,7 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
       return `
         <tr>
             <td style="text-align:center">${index + 1}</td>
-            <td style="font-weight:bold">${item.date || '---'}</td>
+            <td>${formatScheduleDateHtml(item.date || '')}</td>
             <td>${item.time || '---'}</td>
             <td>${courseLabel}</td>
             <td style="font-weight:bold">${item.roomName || '---'}</td>
@@ -243,11 +244,10 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
                             {/* Date & Time Header */}
                             <div className="flex items-center justify-between mb-3 pb-2 border-b-2 border-gray-300">
                                 <div>
-                                    <div className="flex items-center gap-2 text-tvtc-green font-bold">
-                                        <Calendar size={18}/>
-                                        <span className="text-base">{item.date}</span>
+                                    <div className="flex items-start gap-2 text-tvtc-green font-bold">
+                                        <Calendar size={18} className="mt-0.5 flex-shrink-0" />
+                                        <ScheduleDateDisplay date={item.date} />
                                     </div>
-                                    <div className="text-xs text-gray-600 mr-6 mt-0.5">{getArabicDayName(item.date)}</div>
                                 </div>
                                 <div className="flex items-center gap-2 bg-gray-100 px-3 py-1 rounded-full">
                                     <Clock size={16}/>
@@ -308,10 +308,10 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
                                                 {schedule.map((item, idx) => (
                                                     <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                                         <td className="p-4">
-                                                            <div className="flex items-center gap-2 font-bold text-tvtc-green">
-                                                                <Calendar size={16}/> {item.date}
+                                                            <div className="flex items-start gap-2 font-bold text-tvtc-green">
+                                                                <Calendar size={16} className="mt-1 flex-shrink-0" />
+                                                                <ScheduleDateDisplay date={item.date} />
                                                             </div>
-                                                            <div className="text-xs text-gray-600 mr-6">{getArabicDayName(item.date)}</div>
                                                         </td>
                                                         <td className="p-4">
                                                             <div className="flex items-center gap-2">

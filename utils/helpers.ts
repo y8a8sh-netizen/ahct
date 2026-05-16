@@ -107,7 +107,7 @@ export const getDualDate = (dateStr: string): { greg: string, hijri: string, day
     const date = parseAnyDate(dateStr);
     
     // If parsing fails, return original string as Gregorian and empty for others
-    if (!date) return { greg: dateStr, hijri: '', dayName: '' };
+    if (!date) return { greg: dateStr, hijri: '', dayName: getArabicDayName(dateStr) };
 
     // Format Gregorian as DD/MM/YYYY
     const greg = date.toLocaleDateString('en-GB'); 
@@ -119,9 +119,21 @@ export const getDualDate = (dateStr: string): { greg: string, hijri: string, day
         year: 'numeric'
     }).format(date);
     
-    const dayName = date.toLocaleDateString('ar-SA', { weekday: 'long' });
+    const dayName = date.toLocaleDateString('ar-SA', { weekday: 'long' }) || getArabicDayName(dateStr);
 
     return { greg, hijri: hijri + ' هـ', dayName };
+};
+
+export const formatScheduleDateCell = (dateStr: string) => {
+    const { greg, hijri, dayName } = getDualDate(dateStr);
+    return { dayName, gregorian: greg, hijri };
+};
+
+export const formatScheduleDateHtml = (dateStr: string): string => {
+    if (!dateStr) return '---';
+    const { dayName, gregorian, hijri } = formatScheduleDateCell(dateStr);
+    const hijriLine = hijri ? `<br><small style="color:#555">${hijri}</small>` : '';
+    return `<span style="font-weight:bold;color:#006d5b">${dayName}</span><br>${gregorian} م${hijriLine}`;
 };
 
 export const validateSchedule = (
