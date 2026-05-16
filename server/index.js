@@ -184,6 +184,10 @@ initDatabase();
 
 // --- API ROUTES ---
 
+app.get('/api/health', (req, res) => {
+    res.json({ ok: true, version: '2.9-permissions', features: ['auth', 'users-crud'] });
+});
+
 // Auth: login
 app.post('/api/auth/login', async (req, res) => {
     try {
