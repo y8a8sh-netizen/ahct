@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Printer, Filter, Calendar, Layers, Users, BarChart3, Clock, MapPin, UserCheck, TrendingUp, FileText, Search } from 'lucide-react';
 import { Committee, Exam, Room, Student, Proctor } from '../types';
 import PrintProctorSchedules from './PrintProctorSchedules';
-import { parseAnyDate } from '../utils/helpers';
+import { parseAnyDate, formatScheduleDateHtml } from '../utils/helpers';
 
 interface DeptHeadPortalProps {
   data: {
@@ -203,7 +203,7 @@ const DeptHeadPortal: React.FC<DeptHeadPortalProps> = ({ data }) => {
               <div class="sub-title">كشف توقيع حضور الاختبار النهائي - ${exam?.department || 'عام'}</div>
             </div>
             <div class="header-left">
-              <p><b>التاريخ:</b> ${exam?.date}</p>
+              <p><b>التاريخ:</b> ${formatScheduleDateHtml(exam?.date || '')}</p>
               <p><b>الوقت:</b> ${exam?.time}</p>
               <p><b>المدة:</b> ${exam?.duration} دقيقة</p>
             </div>

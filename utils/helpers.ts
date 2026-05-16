@@ -136,6 +136,13 @@ export const formatScheduleDateHtml = (dateStr: string): string => {
     return `<span style="font-weight:bold;color:#006d5b">${dayName}</span><br>${gregorian} م${hijriLine}`;
 };
 
+/** تاريخ اليوم (ميلادي + هجري) لرأس/تذييل صفحات الطباعة */
+export const formatTodayDateHtml = (): string => {
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return formatScheduleDateHtml(iso);
+};
+
 export const validateSchedule = (
   committees: Committee[],
   students: Student[],

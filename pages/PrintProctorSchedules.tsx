@@ -1,6 +1,14 @@
 import React, { useState } from 'react';
 import { Printer, Search } from 'lucide-react';
 import { Proctor, Committee, Exam, Room } from '../types';
+import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
+import { formatScheduleDateHtml, formatTodayDateHtml } from '../utils/helpers';
+
+const PRINT_DATE_STYLES = `
+  td.date-cell { text-align: center; vertical-align: middle; line-height: 1.4; min-width: 100px; }
+  td.date-cell small { font-size: 11px; color: #006d5b; }
+  .print-issued-date { text-align: center; font-size: 12px; color: #444; margin-top: 8px; }
+`;
 
 interface PrintProctorSchedulesProps {
   data: {
@@ -77,7 +85,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
     const rowsHtml = committees.map((row, index) => `
       <tr>
         <td style="text-align:center; padding: 8px; border: 1px solid #ccc;">${index + 1}</td>
-        <td style="padding: 8px; border: 1px solid #ccc; font-weight:bold;">${row.date || '---'}</td>
+        <td class="date-cell" style="padding: 8px; border: 1px solid #ccc;">${formatScheduleDateHtml(row.date || '')}</td>
         <td style="padding: 8px; border: 1px solid #ccc;">${row.time || '---'}</td>
         <td style="padding: 8px; border: 1px solid #ccc;">${row.roomName || '---'}</td>
         <td style="padding: 8px; border: 1px solid #ccc;">${row.committeeIds.join(' ، ') || '---'}</td>
@@ -106,7 +114,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
           th, td { border: 1px solid #ccc; padding: 8px; text-align: right; }
           th { background-color: #eee; font-weight: bold; }
           tr:nth-child(even) { background-color: #fdfdfd; }
-          
+          ${PRINT_DATE_STYLES}
           .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #777; border-top: 1px solid #eee; padding-top: 10px; }
           .page-break { page-break-after: always; }
         </style>
@@ -115,6 +123,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
         <div class="header">
           <h1>الكلية التقنية بأحد رفيدة</h1>
           <h2>جدول تكليف المراقبة للفصل التدريبي الحالي</h2>
+          <div class="print-issued-date">تاريخ الطباعة: ${formatTodayDateHtml()}</div>
         </div>
 
         <div class="info-box">
@@ -198,7 +207,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
       const rowsHtml = procCommitteesGrouped.map((row, index) => `
         <tr>
           <td style="text-align:center; padding: 8px; border: 1px solid #ccc;">${index + 1}</td>
-          <td style="padding: 8px; border: 1px solid #ccc; font-weight:bold;">${row.date || '---'}</td>
+          <td class="date-cell" style="padding: 8px; border: 1px solid #ccc;">${formatScheduleDateHtml(row.date || '')}</td>
           <td style="padding: 8px; border: 1px solid #ccc;">${row.time || '---'}</td>
           <td style="padding: 8px; border: 1px solid #ccc;">${row.roomName || '---'}</td>
           <td style="padding: 8px; border: 1px solid #ccc;">${row.committeeIds.join(' ، ') || '---'}</td>
@@ -211,6 +220,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
           <div style="text-align: center; border-bottom: 2px solid #006d5b; padding-bottom: 10px; margin-bottom: 20px;">
             <h1 style="color: #006d5b; margin: 0; font-size: 20px;">الكلية التقنية بأحد رفيدة</h1>
             <h2 style="font-size: 14px; color: #555; margin-top: 5px; margin: 0;">جدول تكليف المراقبة للفصل التدريبي الحالي</h2>
+            <div style="font-size: 12px; color: #444; margin-top: 8px;">تاريخ الطباعة: ${formatTodayDateHtml()}</div>
           </div>
 
           <div style="background: #f9f9f9; border: 1px solid #ddd; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
@@ -255,6 +265,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
         <style>
           @page { size: A4; margin: 15mm; }
           body { font-family: 'Tajawal', sans-serif; -webkit-print-color-adjust: exact; padding: 20px; }
+          ${PRINT_DATE_STYLES}
         </style>
       </head>
       <body>
@@ -280,6 +291,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
           .print-table th, .print-table td { font-size: 18px !important; padding: 12px 8px !important; }
           .print-table th { background: #f3f3f3 !important; color: #222 !important; border-bottom: 2px solid #222 !important; }
           .print-table td { border-bottom: 1px solid #bbb !important; }
+          .print-table td.text-center { min-width: 120px !important; line-height: 1.4 !important; }
           .print-title { font-size: 28px !important; margin-bottom: 18px !important; }
           .print-proctor { font-size: 22px !important; margin-bottom: 10px !important; }
         }
@@ -333,7 +345,7 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
           <table className="w-full border mt-2 print-table" style={{ borderCollapse: 'collapse' }}>
             <thead>
               <tr className="bg-gray-100">
-                <th className="p-2 border">التاريخ</th>
+                <th className="p-2 border">اليوم والتاريخ</th>
                 <th className="p-2 border">الوقت</th>
                 <th className="p-2 border">القاعة</th>
                 <th className="p-2 border">أرقام اللجان</th>
@@ -343,7 +355,9 @@ const PrintProctorSchedules: React.FC<PrintProctorSchedulesProps> = ({ data }) =
             <tbody>
               {committees.map(row => (
                 <tr key={row.date + row.time + row.roomName} style={{ pageBreakInside: 'avoid', height: 40 }}>
-                  <td className="p-2 border font-semibold text-base">{row.date}</td>
+                  <td className="p-2 border text-center">
+                    <ScheduleDateDisplay date={row.date} />
+                  </td>
                   <td className="p-2 border font-semibold text-base">{row.time}</td>
                   <td className="p-2 border font-semibold text-base">{row.roomName}</td>
                   <td className="p-2 border text-base">{row.committeeIds.join(' ، ')}</td>

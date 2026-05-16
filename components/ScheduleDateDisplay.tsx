@@ -14,7 +14,7 @@ const ScheduleDateDisplay: React.FC<ScheduleDateDisplayProps> = ({
   className = '',
   dayClassName = 'font-bold text-tvtc-green',
   gregClassName = 'text-sm font-medium text-gray-800',
-  hijriClassName = 'text-xs text-gray-600',
+  hijriClassName = 'text-xs text-tvtc-green font-medium',
 }) => {
   if (!date) return <span className={className}>---</span>;
 
