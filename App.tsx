@@ -10,7 +10,8 @@ import AiScheduleBuilder from './pages/AiScheduleBuilder';
 import AdminScheduleEditor from './pages/AdminScheduleEditor';
 import { Student, Exam, Room, Proctor, Committee, DraftSchedule, SystemState, UserSession } from './types';
 import PrintProctorSchedules from './pages/PrintProctorSchedules';
-import { fetchSystemState, syncSystemState } from './services/api';
+import PermissionsManagement from './pages/PermissionsManagement';
+import { fetchSystemState, logoutUser, syncSystemState } from './services/api';
 import { readPortalFromBrowser, setPortalPath, createGuestPortalSession } from './utils/routes';
 
 // Initial Mock Data
@@ -149,6 +150,7 @@ const App: React.FC = () => {
           setPortalResetKey((k) => k + 1);
           return;
       }
+      logoutUser();
       setCurrentUser(null);
       setActiveTab('manager');
       setPortalPath(null);
@@ -187,9 +189,12 @@ const App: React.FC = () => {
             {activeTab === 'admin_schedule_editor' && currentUser.role === 'manager' && (
                 <AdminScheduleEditor data={data} setData={setData} />
             )}
-            {activeTab === 'manage_students' && currentUser.role === 'manager' && (
-                <ManagerDashboard data={data} setData={setData} currentUser={currentUser} initialSection="manage-students" />
-            )}
+            {activeTab === 'manage_students' && currentUser.role === 'manager' && (
+                <ManagerDashboard data={data} setData={setData} currentUser={currentUser} initialSection="manage-students" />
+            )}
+            {activeTab === 'permissions' && currentUser.role === 'manager' && (
+                <PermissionsManagement currentUser={currentUser} />
+            )}
             {activeTab === 'dept' && (currentUser.role === 'manager' || currentUser.role === 'dept_head') && (
                 <DeptHeadPortal data={data} />
             )}

@@ -3,22 +3,61 @@ const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const os = require('os');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-const PORT = 3001; 
+const PORT = process.env.PORT || 3001;
+const JWT_SECRET = process.env.JWT_SECRET || 'tvtc-college-scheduler-dev-secret-change-in-production';
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 
 // PostgreSQL Database Setup
-const pool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'college_scheduler',
-    password: 'admin123',
-    port: 5432,
+const getPoolConfig = () => {
+    if (process.env.DATABASE_URL) {
+        const useSsl = process.env.DATABASE_URL.includes('supabase') || process.env.DATABASE_SSL === 'true';
+        return {
+            connectionString: process.env.DATABASE_URL,
+            ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+        };
+    }
+    return {
+        user: 'postgres',
+        host: 'localhost',
+        database: 'college_scheduler',
+        password: 'admin123',
+        port: 5432,
+    };
+};
+
+const pool = new Pool(getPoolConfig());
+
+const rowToSession = (row) => ({
+    id: String(row.id),
+    name: row.name,
+    role: row.role,
+    readOnly: row.role !== 'manager',
 });
+
+const requireManager = (req, res, next) => {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) {
+        return res.status(401).json({ error: 'غير مصرح: يلزم تسجيل الدخول كمدير' });
+    }
+    try {
+        const payload = jwt.verify(token, JWT_SECRET);
+        if (payload.role !== 'manager') {
+            return res.status(403).json({ error: 'هذه العملية للمدير فقط' });
+        }
+        req.authUser = payload;
+        next();
+    } catch {
+        return res.status(401).json({ error: 'انتهت الجلسة، يرجى تسجيل الدخول مجدداً' });
+    }
+};
 
 // Test connection
 pool.query('SELECT NOW()', (err, res) => {
@@ -109,16 +148,28 @@ const initDatabase = async () => {
             )
         `);
 
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS draft_schedules (
-                id TEXT PRIMARY KEY,
-                name TEXT,
-                created_at TEXT,
-                payload JSONB
-            )
-        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS draft_schedules (
+                id TEXT PRIMARY KEY,
+                name TEXT,
+                created_at TEXT,
+                payload JSONB
+            )
+        `);
 
-        await client.query('COMMIT');
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('manager', 'dept_head')),
+                name TEXT NOT NULL,
+                created_by UUID,
+                created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        await client.query('COMMIT');
         console.log('✅ Database tables initialized successfully');
     } catch (err) {
         await client.query('ROLLBACK');
@@ -132,6 +183,199 @@ const initDatabase = async () => {
 initDatabase();
 
 // --- API ROUTES ---
+
+// Auth: login
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password, role } = req.body || {};
+        const trimmedUsername = String(username || '').trim();
+        const trimmedPassword = String(password || '').trim();
+
+        if (!trimmedUsername || !trimmedPassword || !role) {
+            return res.status(400).json({ error: 'اسم المستخدم وكلمة المرور والدور مطلوبة' });
+        }
+        if (role !== 'manager' && role !== 'dept_head') {
+            return res.status(400).json({ error: 'دور غير صالح' });
+        }
+
+        const result = await pool.query(
+            'SELECT id, username, password_hash, role, name FROM users WHERE username = $1 AND role = $2',
+            [trimmedUsername, role]
+        );
+        const row = result.rows[0];
+        if (!row) {
+            return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
+        }
+
+        const valid = await bcrypt.compare(trimmedPassword, row.password_hash);
+        if (!valid) {
+            return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
+        }
+
+        const session = rowToSession(row);
+        const token = jwt.sign(
+            { id: session.id, username: row.username, role: session.role, name: session.name },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({ token, user: session });
+    } catch (err) {
+        console.error('Login error:', err);
+        res.status(500).json({ error: 'فشل تسجيل الدخول' });
+    }
+});
+
+// Users CRUD (manager only)
+app.get('/api/users', requireManager, async (req, res) => {
+    try {
+        const result = await pool.query(
+            'SELECT id, username, role, name, created_at FROM users ORDER BY role, name'
+        );
+        res.json(result.rows);
+    } catch (err) {
+        console.error('List users error:', err);
+        res.status(500).json({ error: 'فشل جلب المستخدمين' });
+    }
+});
+
+app.post('/api/users', requireManager, async (req, res) => {
+    try {
+        const { username, password, role, name } = req.body || {};
+        const trimmedUsername = String(username || '').trim();
+        const trimmedPassword = String(password || '').trim();
+        const trimmedName = String(name || '').trim();
+
+        if (!trimmedUsername || !trimmedPassword || !trimmedName) {
+            return res.status(400).json({ error: 'جميع الحقول مطلوبة' });
+        }
+        if (role !== 'manager' && role !== 'dept_head') {
+            return res.status(400).json({ error: 'الدور يجب أن يكون manager أو dept_head' });
+        }
+        if (trimmedPassword.length < 6) {
+            return res.status(400).json({ error: 'كلمة المرور 6 أحرف على الأقل' });
+        }
+
+        const hash = await bcrypt.hash(trimmedPassword, 10);
+        const result = await pool.query(
+            `INSERT INTO users (username, password_hash, role, name)
+             VALUES ($1, $2, $3, $4)
+             RETURNING id, username, role, name, created_at`,
+            [trimmedUsername, hash, role, trimmedName]
+        );
+        res.status(201).json(result.rows[0]);
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
+        }
+        console.error('Create user error:', err);
+        res.status(500).json({ error: 'فشل إنشاء المستخدم' });
+    }
+});
+
+app.put('/api/users/:id', requireManager, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (Number.isNaN(userId)) {
+            return res.status(400).json({ error: 'معرّف غير صالح' });
+        }
+
+        const { username, password, role, name } = req.body || {};
+        const trimmedUsername = username !== undefined ? String(username).trim() : undefined;
+        const trimmedName = name !== undefined ? String(name).trim() : undefined;
+        const trimmedPassword = password ? String(password).trim() : '';
+
+        if (role && role !== 'manager' && role !== 'dept_head') {
+            return res.status(400).json({ error: 'دور غير صالح' });
+        }
+
+        const existing = await pool.query('SELECT id, role FROM users WHERE id = $1', [userId]);
+        if (!existing.rows[0]) {
+            return res.status(404).json({ error: 'المستخدم غير موجود' });
+        }
+
+        if (role === 'dept_head' && existing.rows[0].role === 'manager') {
+            const managers = await pool.query("SELECT COUNT(*)::int AS c FROM users WHERE role = 'manager'");
+            if (managers.rows[0].c <= 1) {
+                return res.status(400).json({ error: 'لا يمكن تحويل آخر مدير في النظام' });
+            }
+        }
+
+        const fields = [];
+        const values = [];
+        let idx = 1;
+
+        if (trimmedUsername) {
+            fields.push(`username = $${idx++}`);
+            values.push(trimmedUsername);
+        }
+        if (trimmedName) {
+            fields.push(`name = $${idx++}`);
+            values.push(trimmedName);
+        }
+        if (role) {
+            fields.push(`role = $${idx++}`);
+            values.push(role);
+        }
+        if (trimmedPassword) {
+            if (trimmedPassword.length < 6) {
+                return res.status(400).json({ error: 'كلمة المرور 6 أحرف على الأقل' });
+            }
+            const hash = await bcrypt.hash(trimmedPassword, 10);
+            fields.push(`password_hash = $${idx++}`);
+            values.push(hash);
+        }
+
+        if (fields.length === 0) {
+            return res.status(400).json({ error: 'لا توجد بيانات للتحديث' });
+        }
+
+        values.push(userId);
+        const result = await pool.query(
+            `UPDATE users SET ${fields.join(', ')} WHERE id = $${idx}
+             RETURNING id, username, role, name, created_at`,
+            values
+        );
+        res.json(result.rows[0]);
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(409).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
+        }
+        console.error('Update user error:', err);
+        res.status(500).json({ error: 'فشل تحديث المستخدم' });
+    }
+});
+
+app.delete('/api/users/:id', requireManager, async (req, res) => {
+    try {
+        const userId = parseInt(req.params.id, 10);
+        if (Number.isNaN(userId)) {
+            return res.status(400).json({ error: 'معرّف غير صالح' });
+        }
+
+        if (String(userId) === String(req.authUser.id)) {
+            return res.status(400).json({ error: 'لا يمكنك حذف حسابك الحالي' });
+        }
+
+        const target = await pool.query('SELECT id, role FROM users WHERE id = $1', [userId]);
+        if (!target.rows[0]) {
+            return res.status(404).json({ error: 'المستخدم غير موجود' });
+        }
+
+        if (target.rows[0].role === 'manager') {
+            const managers = await pool.query("SELECT COUNT(*)::int AS c FROM users WHERE role = 'manager'");
+            if (managers.rows[0].c <= 1) {
+                return res.status(400).json({ error: 'لا يمكن حذف آخر مدير في النظام' });
+            }
+        }
+
+        await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete user error:', err);
+        res.status(500).json({ error: 'فشل حذف المستخدم' });
+    }
+});
 
 // 1. GET Full State
 app.get('/api/state', async (req, res) => {

@@ -94,3 +94,16 @@ export interface UserSession {
   department?: string;
   readOnly: boolean; // true = read-only, false = can edit
 }
+
+export interface SystemUser {
+  id: number;
+  username: string;
+  role: 'manager' | 'dept_head';
+  name: string;
+  created_at?: string;
+}
+
+export interface AuthLoginResponse {
+  token: string;
+  user: UserSession;
+}

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Lock, User, ShieldCheck, Users, UserCheck, BookOpen, ArrowRight, Key, LayoutGrid } from 'lucide-react';
 import { Student, Proctor, UserSession, UserRole } from '../types';
 import { createGuestPortalSession, readPortalFromBrowser } from '../utils/routes';
+import { loginUser } from '../services/api';
 
 interface LoginPageProps {
   data: {
@@ -17,6 +18,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
       const portal = readPortalFromBrowser();
@@ -25,7 +27,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
       }
   }, [onLogin]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     const inputUsername = username.trim();
@@ -33,24 +35,21 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
 
     if (!selectedRole) return;
 
-    // 1. Manager Authentication (Read-Write Access)
-    if (selectedRole === 'manager') {
-        if (inputUsername === 'postgres' && inputPassword === 'admin123') {
-            onLogin({ id: 'admin', name: 'مدير النظام', role: 'manager', readOnly: false });
-        } else {
-            setError('اسم المستخدم أو كلمة المرور غير صحيحة');
-        }
+    if (selectedRole !== 'manager' && selectedRole !== 'dept_head') return;
+
+    if (!inputUsername || !inputPassword) {
+        setError('اسم المستخدم وكلمة المرور مطلوبان');
         return;
     }
 
-    // 2. Dept Head Authentication (Read-Only Access)
-    if (selectedRole === 'dept_head') {
-        if (inputPassword === 'DepAdmin') {
-            onLogin({ id: 'dep_admin', name: 'رئيس الأقسام', role: 'dept_head', readOnly: true });
-        } else {
-            setError('كلمة المرور غير صحيحة');
-        }
-        return;
+    setLoading(true);
+    const result = await loginUser(inputUsername, inputPassword, selectedRole);
+    setLoading(false);
+
+    if (result.ok) {
+        onLogin(result.user);
+    } else {
+        setError(result.error);
     }
   };
 
@@ -73,10 +72,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
           color: 'bg-gradient-to-br from-blue-600 to-blue-800', 
           borderColor: 'border-blue-200',
           textColor: 'text-blue-700',
-          passwordPlaceholder: 'أدخل كلمة المرور', 
+          usernamePlaceholder: 'اسم المستخدم',
+          passwordPlaceholder: 'كلمة المرور', 
           type: 'password',
           hint: 'الاطلاع والطباعة فقط (قراءة فقط)',
-          requiresUsername: false
+          requiresUsername: true
       },
       proctor: { 
           title: 'المدرب / المراقب', 
@@ -197,7 +197,6 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
                 
                 <div className="p-4 sm:p-6 md:p-8">
                     <form onSubmit={handleLogin} className="space-y-4 sm:space-y-6">
-                        {/* Username field (only for manager) */}
                         {roleConfig[selectedRole].requiresUsername && (
                             <div>
                                 <label className={`block text-sm font-bold mb-2 ${roleConfig[selectedRole].textColor}`}>
@@ -246,10 +245,11 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
                         )}
 
                         <button 
-                            type="submit" 
-                            className={`w-full text-white py-3 sm:py-3.5 rounded-lg sm:rounded-xl font-bold hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all text-base sm:text-lg shadow-md ${roleConfig[selectedRole].color}`}
+                            type="submit"
+                            disabled={loading}
+                            className={`w-full text-white py-3 sm:py-3.5 rounded-lg sm:rounded-xl font-bold hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all text-base sm:text-lg shadow-md disabled:opacity-60 ${roleConfig[selectedRole].color}`}
                         >
-                            دخول
+                            {loading ? 'جاري التحقق...' : 'دخول'}
                         </button>
 
                         {/* Bottom Back Button */}

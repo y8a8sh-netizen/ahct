@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Menu, BookOpen, Users, LayoutDashboard, LogOut, UserCheck, Shield, CalendarDays, Sparkles, X, Printer, UserPlus } from 'lucide-react';
+import { Menu, BookOpen, Users, LayoutDashboard, LogOut, UserCheck, Shield, CalendarDays, Sparkles, X, Printer, UserPlus, KeyRound } from 'lucide-react';
 import { UserSession } from '../types';
 
 interface LayoutProps {
@@ -115,6 +115,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, curr
               >
                 <UserPlus size={20} className="text-tvtc-gold" />
                 <span>إدارة المتدربين</span>
+              </button>
+              <button
+                onClick={() => handleTabChange('permissions')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-sm md:text-base ${activeTab === 'permissions' ? 'bg-white/20 font-bold' : 'hover:bg-white/10'}`}
+              >
+                <KeyRound size={20} className="text-tvtc-gold" />
+                <span>إدارة الصلاحيات</span>
               </button>
             </>
           )}

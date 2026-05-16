@@ -1,5 +1,6 @@
 
-import { SystemState } from '../types';
+import { AuthLoginResponse, SystemState, SystemUser, UserRole, UserSession } from '../types';
+import { clearAuthToken, getAuthHeaders, setAuthToken } from '../utils/auth';
 
 // تحديد رابط السيرفر ديناميكياً بناءً على رابط المتصفح
 // هذا يسمح بالعمل سواء كنت على localhost أو عبر الشبكة (IP Address)
@@ -44,5 +45,99 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
     } catch (error) {
         console.warn('Sync failed (Offline Mode):', error instanceof Error ? error.message : error);
         return false;
+    }
+};
+
+export const loginUser = async (
+    username: string,
+    password: string,
+    role: UserRole
+): Promise<{ ok: true; user: UserSession } | { ok: false; error: string }> => {
+    try {
+        const url = `${getApiUrl()}/auth/login`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            return { ok: false, error: body.error || 'فشل تسجيل الدخول' };
+        }
+        const data = body as AuthLoginResponse;
+        setAuthToken(data.token);
+        return { ok: true, user: data.user };
+    } catch {
+        return { ok: false, error: 'تعذر الاتصال بالخادم. تأكد من تشغيل السيرفر وربط قاعدة البيانات.' };
+    }
+};
+
+export const logoutUser = (): void => {
+    clearAuthToken();
+};
+
+export const fetchUsers = async (): Promise<SystemUser[] | null> => {
+    try {
+        const url = `${getApiUrl()}/users`;
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        return null;
+    }
+};
+
+export const createSystemUser = async (payload: {
+    username: string;
+    password: string;
+    role: 'manager' | 'dept_head';
+    name: string;
+}): Promise<{ ok: true; user: SystemUser } | { ok: false; error: string }> => {
+    try {
+        const url = `${getApiUrl()}/users`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(payload),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) return { ok: false, error: body.error || 'فشل الإنشاء' };
+        return { ok: true, user: body as SystemUser };
+    } catch {
+        return { ok: false, error: 'تعذر الاتصال بالخادم' };
+    }
+};
+
+export const updateSystemUser = async (
+    id: number,
+    payload: Partial<{ username: string; password: string; role: 'manager' | 'dept_head'; name: string }>
+): Promise<{ ok: true; user: SystemUser } | { ok: false; error: string }> => {
+    try {
+        const url = `${getApiUrl()}/users/${id}`;
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(payload),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) return { ok: false, error: body.error || 'فشل التحديث' };
+        return { ok: true, user: body as SystemUser };
+    } catch {
+        return { ok: false, error: 'تعذر الاتصال بالخادم' };
+    }
+};
+
+export const deleteSystemUser = async (id: number): Promise<{ ok: boolean; error?: string }> => {
+    try {
+        const url = `${getApiUrl()}/users/${id}`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: getAuthHeaders(),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) return { ok: false, error: body.error || 'فشل الحذف' };
+        return { ok: true };
+    } catch {
+        return { ok: false, error: 'تعذر الاتصال بالخادم' };
     }
 };
