@@ -11,9 +11,7 @@ import AdminScheduleEditor from './pages/AdminScheduleEditor';
 import { Student, Exam, Room, Proctor, Committee, DraftSchedule, SystemState, UserSession } from './types';
 import PrintProctorSchedules from './pages/PrintProctorSchedules';
 import { fetchSystemState, syncSystemState } from './services/api';
-import { getPortalFromPath, setPortalPath, createGuestPortalSession } from './utils/routes';
-
-const portalOnLoad = getPortalFromPath(window.location.pathname);
+import { readPortalFromBrowser, setPortalPath, createGuestPortalSession } from './utils/routes';
 
 // Initial Mock Data
 const initialData: SystemState = {
@@ -27,15 +25,19 @@ const initialData: SystemState = {
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<UserSession | null>(() => {
-      if (portalOnLoad) {
+      const portal = readPortalFromBrowser();
+      if (portal) {
           localStorage.removeItem('tvtc_exam_system');
-          return createGuestPortalSession(portalOnLoad);
+          return createGuestPortalSession(portal);
       }
       return null;
   });
-  const [activeTab, setActiveTab] = useState(() =>
-      portalOnLoad === 'student' ? 'student' : portalOnLoad === 'proctor' ? 'proctor' : 'manager'
-  );
+  const [activeTab, setActiveTab] = useState(() => {
+      const portal = readPortalFromBrowser();
+      if (portal === 'student') return 'student';
+      if (portal === 'proctor') return 'proctor';
+      return 'manager';
+  });
   const [data, setData] = useState<SystemState>(initialData);
   
   const [isServerConnected, setIsServerConnected] = useState(false);
@@ -143,7 +145,16 @@ const App: React.FC = () => {
       setPortalPath(null);
   }, []);
 
-  // If not logged in, show Login Page
+  // Fallback: open portal when URL is /student or /proctor
+  useEffect(() => {
+      if (currentUser) return;
+      const portal = readPortalFromBrowser();
+      if (portal) {
+          handleLogin(createGuestPortalSession(portal));
+      }
+  }, [currentUser, handleLogin]);
+
+  // If not logged in, show Login Page
   if (!currentUser) {
       return <LoginPage data={data} onLogin={handleLogin} />;
   }

@@ -46,11 +46,3 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
         return false;
     }
 };
-
-
-        return await response.json();
-    } catch (error) {
-        console.error('Login Error:', error instanceof Error ? error.message : error);
-        return null;
-    }
-};

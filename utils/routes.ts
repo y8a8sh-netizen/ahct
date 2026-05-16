@@ -6,10 +6,15 @@ const PORTAL_PATHS: Record<PortalRole, string> = {
 };
 
 export function getPortalFromPath(pathname: string): PortalRole | null {
-  const normalized = pathname.replace(/\/$/, '') || '/';
-  if (normalized === PORTAL_PATHS.student) return 'student';
-  if (normalized === PORTAL_PATHS.proctor) return 'proctor';
+  const normalized = (pathname.split('?')[0].split('#')[0].replace(/\/$/, '') || '/').toLowerCase();
+  if (normalized === PORTAL_PATHS.student || normalized.endsWith('/student')) return 'student';
+  if (normalized === PORTAL_PATHS.proctor || normalized.endsWith('/proctor')) return 'proctor';
   return null;
+}
+
+export function readPortalFromBrowser(): PortalRole | null {
+  if (typeof window === 'undefined') return null;
+  return getPortalFromPath(window.location.pathname);
 }
 
 export function setPortalPath(role: PortalRole | null): void {

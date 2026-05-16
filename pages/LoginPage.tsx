@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, User, ShieldCheck, Users, UserCheck, BookOpen, ArrowRight, Key, LayoutGrid } from 'lucide-react';
 import { Student, Proctor, UserSession, UserRole } from '../types';
-import { createGuestPortalSession } from '../utils/routes';
+import { createGuestPortalSession, readPortalFromBrowser } from '../utils/routes';
 
 interface LoginPageProps {
   data: {
@@ -17,6 +17,13 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+      const portal = readPortalFromBrowser();
+      if (portal) {
+          onLogin(createGuestPortalSession(portal));
+      }
+  }, [onLogin]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
