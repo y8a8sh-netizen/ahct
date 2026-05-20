@@ -21,6 +21,26 @@ interface ManagerDashboardProps {
   initialSection?: 'upload' | 'create' | 'reports' | 'manage-students';
 }
 
+interface UnassignedStudentDetail {
+  studentId: string;
+  studentName: string;
+  specialization: string;
+}
+
+interface UnassignedExamDetail {
+  examCode: string;
+  examName: string;
+  specialization: string;
+  date: string;
+  time: string;
+  roomTypeLabel: string;
+  totalMatchingCapacity: number;
+  assignedCount: number;
+  remainingCount: number;
+  reason: string;
+  students: UnassignedStudentDetail[];
+}
+
 const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, currentUser, initialSection = 'upload' }) => {
   const isReadOnly = currentUser.readOnly;
   const [activeSection, setActiveSection] = useState<'upload' | 'create' | 'reports' | 'manage-students'>(initialSection);
@@ -28,6 +48,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
   const [loadingAi, setLoadingAi] = useState(false);
   const [validationErrors, setValidationErrors] = useState<Conflict[]>([]);
   const [executionStatus, setExecutionStatus] = useState<'idle' | 'success' | 'failed'>('idle');
+  const [distributionReport, setDistributionReport] = useState<{ allAssigned: boolean; details: UnassignedExamDetail[] } | null>(null);
   const [showShareModal, setShowShareModal] = useState(false);
 
   // File Upload Preview State
@@ -446,6 +467,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     const proctorsPerRoomSlot: Record<string, string[]> = {};
     const proctorLoadCounted: Record<string, Set<string>> = {}; // key: `${timeSlotKey}-${room.id}` => Set<proctorId>
     const newCommittees: Committee[] = [];
+    const unassignedExamDetails: UnassignedExamDetail[] = [];
     let committeeIdCounter = 1;
 
     // Use robust date comparison for sorting exams
@@ -484,11 +506,34 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
         }
 
         const requiredRoomType = exam.type === 'Blackboard' ? 'Lab' : 'Hall';
+        const roomTypeLabel = requiredRoomType === 'Lab' ? 'المعامل' : 'القاعات';
+        const matchingRooms = data.rooms.filter(r => r.type === requiredRoomType);
+        const totalMatchingCapacity = matchingRooms.reduce((sum, room) => sum + room.capacity, 0);
+        const totalEligibleCount = eligibleStudents.length;
         // القاعات التي فيها سعة متبقية في هذه الفترة
         let availableRooms = data.rooms.filter(r => r.type === requiredRoomType && ((roomUsage[timeSlotKey][r.id] || 0) < r.capacity));
         availableRooms.sort((a, b) => b.capacity - a.capacity);
 
-        if (availableRooms.length === 0) return;
+        if (availableRooms.length === 0) {
+            unassignedExamDetails.push({
+                examCode: exam.courseCode,
+                examName: exam.courseName || '---',
+                specialization: exam.specialization || 'عام',
+                date: exam.date || '---',
+                time: exam.time || '---',
+                roomTypeLabel,
+                totalMatchingCapacity,
+                assignedCount: 0,
+                remainingCount: totalEligibleCount,
+                reason: `لا توجد قاعات متاحة من نوع ${requiredRoomType === 'Lab' ? 'معمل' : 'قاعة'} في هذا الموعد.`,
+                students: eligibleStudents.map(s => ({
+                    studentId: s.id,
+                    studentName: s.name || '---',
+                    specialization: s.specialization || '---'
+                }))
+            });
+            return;
+        }
 
         // توزيع بحيث يتم ملء القاعات بالكامل أولاً، وإنشاء لجان إضافية للزائدين
         let studentsLeft = [...eligibleStudents];
@@ -561,6 +606,31 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
             }
             if (studentsLeft.length === 0) break;
         }
+
+        if (studentsLeft.length > 0) {
+            unassignedExamDetails.push({
+                examCode: exam.courseCode,
+                examName: exam.courseName || '---',
+                specialization: exam.specialization || 'عام',
+                date: exam.date || '---',
+                time: exam.time || '---',
+                roomTypeLabel,
+                totalMatchingCapacity,
+                assignedCount: totalEligibleCount - studentsLeft.length,
+                remainingCount: studentsLeft.length,
+                reason: `السعة المتاحة في ${requiredRoomType === 'Lab' ? 'المعامل' : 'القاعات'} غير كافية في هذا الموعد.`,
+                students: studentsLeft.map(s => ({
+                    studentId: s.id,
+                    studentName: s.name || '---',
+                    specialization: s.specialization || '---'
+                }))
+            });
+        }
+    });
+
+    setDistributionReport({
+      allAssigned: unassignedExamDetails.length === 0,
+      details: unassignedExamDetails
     });
 
     setData((prev: any) => ({ ...prev, committees: newCommittees }));
@@ -568,7 +638,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
 
   const handleAiAdvice = async () => {
     setLoadingAi(true);
-    const advice = await getAiAdvice(data);
+    const advice = await getAiAdvice({ ...data, drafts: [] });
     setAiAdvice(advice);
     setLoadingAi(false);
   };
@@ -1123,6 +1193,109 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     printWindow.document.close();
   };
 
+  const handlePrintUnassignedReport = () => {
+    if (!distributionReport || distributionReport.allAssigned || distributionReport.details.length === 0) {
+      alert('لا توجد حالات عدم توزيع لطباعة التقرير.');
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const escapeHtml = (value: string) =>
+      String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const totalUnassignedStudents = distributionReport.details.reduce((sum, d) => sum + d.students.length, 0);
+
+    const sectionsHtml = distributionReport.details.map((detail, index) => {
+      const studentsHtml = detail.students.length > 0
+        ? detail.students.map(s => `
+            <tr>
+              <td>${escapeHtml(s.studentId)}</td>
+              <td>${escapeHtml(s.studentName)}</td>
+              <td>${escapeHtml(s.specialization)}</td>
+            </tr>
+          `).join('')
+        : `<tr><td colspan="3">لا يوجد</td></tr>`;
+
+      return `
+        <div class="case-block">
+          <h3>الحالة ${index + 1}: ${escapeHtml(detail.examCode)} - ${escapeHtml(detail.examName)} | تم التوزيع: ${detail.assignedCount} | المتبقي: ${detail.remainingCount}</h3>
+          <div class="meta">
+            <span><b>التخصص:</b> ${escapeHtml(detail.specialization)}</span>
+            <span><b>الموعد:</b> ${escapeHtml(detail.date)} - ${escapeHtml(detail.time)}</span>
+            <span><b>السعة الإجمالية لـ${escapeHtml(detail.roomTypeLabel)}:</b> ${detail.totalMatchingCapacity}</span>
+          </div>
+          <div class="reason"><b>سبب عدم التوزيع:</b> ${escapeHtml(detail.reason)}</div>
+          <div class="count">عدد المتدربين غير الموزعين: <b>${detail.students.length}</b></div>
+          <table>
+            <thead>
+              <tr>
+                <th>الرقم التدريبي</th>
+                <th>اسم المتدرب</th>
+                <th>التخصص</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${studentsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html dir="rtl">
+      <head>
+        <title>تقرير أسباب عدم توزيع المتدربين</title>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+        <style>
+          @page { size: A4; margin: 12mm; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { font-family: 'Tajawal', sans-serif; margin: 0; color: #111827; }
+          .header { text-align: center; border-bottom: 3px solid #b91c1c; margin-bottom: 16px; padding-bottom: 10px; }
+          .header h1 { margin: 0; color: #7f1d1d; font-size: 22px; }
+          .header h2 { margin: 6px 0 0; color: #374151; font-size: 15px; font-weight: 600; }
+          .summary { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+          .chip { border: 1px solid #fecaca; background: #fef2f2; color: #7f1d1d; border-radius: 999px; padding: 4px 10px; font-size: 12px; }
+          .case-block { border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-bottom: 10px; page-break-inside: avoid; }
+          .case-block h3 { margin: 0 0 8px; font-size: 15px; color: #1f2937; }
+          .meta { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; margin-bottom: 6px; color: #374151; }
+          .reason { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; border-radius: 6px; padding: 6px 8px; font-size: 12px; margin-bottom: 6px; }
+          .count { font-size: 12px; margin-bottom: 8px; color: #111827; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #d1d5db; padding: 6px; text-align: right; }
+          th { background: #991b1b; color: #fff; }
+          tr:nth-child(even) td { background: #f9fafb; }
+          .print-date { margin-top: 6px; color: #6b7280; font-size: 11px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>الكلية التقنية بأحد رفيدة</h1>
+          <h2>تقرير أسباب عدم توزيع المتدربين</h2>
+          <div class="print-date">تاريخ الطباعة: ${new Date().toLocaleDateString('en-GB')}</div>
+        </div>
+        <div class="summary">
+          <span class="chip">عدد الحالات: ${distributionReport.details.length}</span>
+          <span class="chip">إجمالي المتدربين غير الموزعين: ${totalUnassignedStudents}</span>
+        </div>
+        ${sectionsHtml}
+        <script>window.onload = function() { window.print(); };</script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const renderMasterSchedule = () => {
     // ... same as before
     const { dates, times } = getMatrixData();
@@ -1554,6 +1727,11 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                             <FileDown size={16} /> تصدير شامل للمتدربين
                         </button>
                         <button onClick={generateCommittees} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed">توزيع تلقائي (متوازن)</button>
+                        {distributionReport && !distributionReport.allAssigned && (
+                            <button onClick={handlePrintUnassignedReport} className="bg-red-700 text-white px-4 py-2 rounded hover:bg-red-800 flex items-center gap-2 text-sm">
+                                <Printer size={16} /> طباعة أسباب عدم التوزيع
+                            </button>
+                        )}
                         <button onClick={handleExportSchedule} className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 flex items-center gap-2">
                             <Download size={16} /> تصدير الجدول
                         </button>
@@ -1585,6 +1763,50 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                         <CheckCircle size={20}/>
                         <span>تم التحقق من الشروط بنجاح! الجدول جاهز للنشر.</span>
                      </div>
+                )}
+
+                {distributionReport?.allAssigned && (
+                    <div className="mb-6 bg-green-50 border border-green-200 rounded p-4 flex items-center gap-2 text-green-800">
+                        <CheckCircle size={20}/>
+                        <span>تم توزيع جميع المتدربين على جميع المقررات بنجاح.</span>
+                    </div>
+                )}
+
+                {distributionReport && !distributionReport.allAssigned && (
+                    <div className="mb-6 bg-red-50 border border-red-200 rounded p-4 text-red-800">
+                        <h4 className="font-bold flex items-center gap-2 mb-3">
+                            <AlertCircle size={18}/>
+                            لم يتم توزيع جميع المتدربين. التفاصيل أدناه:
+                        </h4>
+                        <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                            {distributionReport.details.map((detail, idx) => (
+                                <div key={`${detail.examCode}-${detail.specialization}-${detail.date}-${detail.time}-${idx}`} className="bg-white border border-red-100 rounded p-3">
+                                    <div className="text-sm font-semibold">
+                                        المقرر: {detail.examCode} - {detail.examName} | تم التوزيع: {detail.assignedCount} | المتبقي: {detail.remainingCount}
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                        التخصص: {detail.specialization} | الموعد: {detail.date} - {detail.time}
+                                    </div>
+                                    <div className="text-xs mt-1">
+                                        السعة الإجمالية لـ{detail.roomTypeLabel}: {detail.totalMatchingCapacity}
+                                    </div>
+                                    <div className="text-xs mt-1 font-medium">
+                                        السبب: {detail.reason}
+                                    </div>
+                                    <div className="text-xs mt-2">
+                                        المتدربون غير الموزعين ({detail.students.length}):
+                                    </div>
+                                    <div className="text-xs mt-1 max-h-24 overflow-y-auto bg-red-50 border border-red-100 rounded p-2">
+                                        {detail.students.map((s, sIdx) => (
+                                            <div key={`${s.studentId}-${sIdx}`}>
+                                                {s.studentId} - {s.studentName} ({s.specialization})
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 )}
 
                 {/* Committees List */}
