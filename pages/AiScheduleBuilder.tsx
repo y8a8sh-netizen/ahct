@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Upload, CalendarDays, Play, Download, CheckCircle, RefreshCcw, Grid, AlertTriangle, FileText, Sparkles, BarChart2, X, Filter, Split, Merge, Info, Search, Settings, ArrowLeftRight, CheckCheck, Move, MousePointer2, Wrench, AlertOctagon, BatteryWarning, Plus, Clock, AlertCircle, Monitor, Save } from 'lucide-react';
 import { parseCSV, validateSchedule, getDualDate } from '../utils/helpers';
 import { Conflict, Exam, Committee, Room, Proctor, Student, DraftSchedule } from '../types';
+import { fetchSystemState, syncSystemState } from '../services/api';
 
 interface AiScheduleBuilderProps {
   data?: any;
@@ -922,6 +923,7 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
       setExamDays(10);
       setPeriodsPerDay(3);
       setDuration(120);
+      setMaxCapacityPerPeriod(0);
       setPeriodConfigs([
           { start: '08:00', end: '10:00' },
           { start: '10:30', end: '12:30' },
@@ -932,7 +934,7 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
       setStep(0);
   };
 
-  const saveDraft = () => {
+  const saveDraft = async () => {
       if (!setData) return;
       if (schedule.length === 0) {
           alert('لا يوجد جدول قابل للحفظ. أنشئ جدولاً أولاً ثم حاول الحفظ.');
@@ -949,6 +951,7 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
           examDays,
           periodsPerDay,
           duration,
+          maxCapacityPerPeriod,
           periodConfigs,
           courses: schedule.map(c => ({
               code: c.code,
@@ -971,25 +974,33 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
           }))
       };
 
-      setData((prev: any) => ({
-          ...prev,
-          drafts: [ ...(Array.isArray(prev.drafts) ? prev.drafts : []), newDraft ]
-      }));
+      const nextData = {
+          ...(data || {}),
+          drafts: [ ...(Array.isArray(data?.drafts) ? data.drafts : []), newDraft ]
+      };
+      setData(nextData);
       setDraftName('');
       setActiveDraftId(draftId);
-      alert('✅ تم حفظ الجدول المبدئي بنجاح. يمكنك تحميله أو تعديله لاحقاً.');
+      const synced = await syncSystemState(nextData);
+      if (synced) {
+          alert('✅ تم حفظ الجدول المبدئي ومزامنته مع الخادم بنجاح.');
+      } else {
+          alert('✅ تم حفظ الجدول المبدئي محلياً، لكن تعذرت مزامنته الآن. تأكد من اتصال الخادم ثم جرّب مرة أخرى.');
+      }
   };
 
-  const deleteDraft = (draftId: string) => {
+  const deleteDraft = async (draftId: string) => {
       if (!setData) return;
       if (!confirm('هل أنت متأكد من حذف هذا الجدول المبدئي؟')) return;
-      setData((prev: any) => ({
-          ...prev,
-          drafts: (Array.isArray(prev.drafts) ? prev.drafts : []).filter((d: DraftSchedule) => d.id !== draftId)
-      }));
+      const nextData = {
+          ...(data || {}),
+          drafts: (Array.isArray(data?.drafts) ? data.drafts : []).filter((d: DraftSchedule) => d.id !== draftId)
+      };
+      setData(nextData);
       if (activeDraftId === draftId) {
           setActiveDraftId(null);
       }
+      await syncSystemState(nextData);
   };
 
   const loadDraft = (draft: DraftSchedule) => {
@@ -999,6 +1010,7 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
       setExamDays(draft.examDays);
       setPeriodsPerDay(draft.periodsPerDay);
       setDuration(draft.duration);
+      setMaxCapacityPerPeriod(draft.maxCapacityPerPeriod ?? 0);
       setPeriodConfigs(draft.periodConfigs);
       setSlots(draft.slots.map(s => ({ ...s })));
       const loadedCourses = draft.courses.map(c => ({
@@ -1024,6 +1036,44 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
       setUnassigned([]);
       setStep(3);
   };
+
+  const saveCapacityToActiveDraft = async () => {
+      if (!setData || !data || !activeDraftId) {
+          alert('افتح مسودة أولاً ثم عدّل السعة واحفظها.');
+          return;
+      }
+
+      const nextData = {
+          ...data,
+          drafts: (Array.isArray(data.drafts) ? data.drafts : []).map((d: DraftSchedule) =>
+              d.id === activeDraftId
+                  ? { ...d, maxCapacityPerPeriod }
+                  : d
+          )
+      };
+
+      setData(nextData);
+      const synced = await syncSystemState(nextData);
+      if (!synced) {
+          alert('⚠️ تم حفظ السعة محلياً، لكن تعذرت المزامنة حالياً.');
+          return;
+      }
+
+      // Verify from server to ensure persistence across refresh/login/devices.
+      const serverState = await fetchSystemState();
+      if (serverState?.drafts) {
+          const savedDraft = serverState.drafts.find((d: DraftSchedule) => d.id === activeDraftId);
+          const savedCapacity = savedDraft?.maxCapacityPerPeriod ?? 0;
+          if (savedCapacity === maxCapacityPerPeriod) {
+              setData(serverState);
+              alert('✅ تم حفظ سعة الفترة في المسودة وتأكيدها من الخادم.');
+              return;
+          }
+      }
+
+      alert('⚠️ تمت المزامنة لكن لم يتم تأكيد حفظ قيمة السعة من الخادم. تأكد من إعادة تشغيل السيرفر ثم أعد الحفظ.');
+  };
+
 
   const handleExportCSV = () => {
       const headers = ["course", "courseName", "Time", "date", "ExamType", "Duration", "department", "specialization"];
@@ -1533,6 +1583,25 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
                       <p className="text-sm text-gray-600 mt-1">
                           تم توزيع {schedule.filter(c => c.assignedSlot !== null).length} مقرر على {slots.length} فترة زمنية.
                       </p>
+                      <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                          <label className="text-sm font-medium text-gray-700">سعة الفترة (شرط الحد الأقصى):</label>
+                          <input
+                              type="number"
+                              min={0}
+                              value={maxCapacityPerPeriod}
+                              onChange={e => setMaxCapacityPerPeriod(parseInt(e.target.value) || 0)}
+                              placeholder="0 = غير محدود"
+                              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-48 bg-white"
+                          />
+                          <button
+                              onClick={saveCapacityToActiveDraft}
+                              disabled={!activeDraftId}
+                              className="bg-emerald-600 text-white px-3 py-1.5 rounded text-xs hover:bg-emerald-700 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                              حفظ السعة
+                          </button>
+                          <span className="text-xs text-gray-500">0 يعني بدون حد أقصى</span>
+                      </div>
                   </div>
                   
                   <div className="flex flex-wrap gap-2 justify-end items-center">

@@ -844,6 +844,10 @@ app.post('/api/sync', async (req, res) => {
             }))));
 
             if (Array.isArray(data.drafts)) {
+                const existingDrafts = await fetchTable('draft_schedules');
+                const existingCapacityById = new Map(
+                    (existingDrafts || []).map((d) => [d.id, d?.payload?.maxCapacityPerPeriod])
+                );
                 await deleteAll('draft_schedules', 'id');
                 await bulkInsert('draft_schedules', data.drafts.map((d) => ({
                     id: d.id,
@@ -854,6 +858,7 @@ app.post('/api/sync', async (req, res) => {
                         examDays: d.examDays,
                         periodsPerDay: d.periodsPerDay,
                         duration: d.duration,
+                        maxCapacityPerPeriod: d.maxCapacityPerPeriod ?? existingCapacityById.get(d.id) ?? 0,
                         periodConfigs: d.periodConfigs,
                         courses: d.courses,
                         slots: d.slots,
@@ -950,6 +955,10 @@ app.post('/api/sync', async (req, res) => {
         console.timeEnd('bulkInsert:committee_students');
 
         // Insert Draft Schedules
+        const existingDraftRows = await client.query("SELECT id, payload FROM draft_schedules");
+        const existingCapacityById = new Map(
+            (existingDraftRows.rows || []).map((d) => [d.id, d?.payload?.maxCapacityPerPeriod])
+        );
         await client.query("DELETE FROM draft_schedules");
         if (Array.isArray(data.drafts)) {
             for (const d of data.drafts) {
@@ -960,6 +969,7 @@ app.post('/api/sync', async (req, res) => {
                         examDays: d.examDays,
                         periodsPerDay: d.periodsPerDay,
                         duration: d.duration,
+                        maxCapacityPerPeriod: d.maxCapacityPerPeriod ?? existingCapacityById.get(d.id) ?? 0,
                         periodConfigs: d.periodConfigs,
                         courses: d.courses,
                         slots: d.slots

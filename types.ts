@@ -47,6 +47,7 @@ export interface DraftSchedule {
   examDays: number;
   periodsPerDay: number;
   duration: number;
+  maxCapacityPerPeriod?: number;
   periodConfigs: Array<{ start: string; end: string }>;
   courses: Array<{
     code: string;
