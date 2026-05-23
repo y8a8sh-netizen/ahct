@@ -4,6 +4,9 @@ import { Upload, CalendarDays, Play, Download, CheckCircle, RefreshCcw, Grid, Al
 import { parseCSV, validateSchedule, getDualDate } from '../utils/helpers';
 import { Conflict, Exam, Committee, Room, Proctor, Student, DraftSchedule } from '../types';
 import { fetchSystemState, syncSystemState } from '../services/api';
+import { ReportEditorView } from '../components/scheduleReport/ScheduleReportDocument';
+import { buildScheduleFromBuilder } from '../components/scheduleReport/buildScheduleFromBuilder';
+import type { PeriodHeader, ScheduleDay } from '../components/scheduleReport/types';
 
 interface AiScheduleBuilderProps {
   data?: any;
@@ -107,6 +110,12 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
 
   const [draftName, setDraftName] = useState('');
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
+
+  const [showMatrixPrint, setShowMatrixPrint] = useState(false);
+  const [matrixPrintData, setMatrixPrintData] = useState<{
+    scheduleData: ScheduleDay[];
+    periodHeaders: PeriodHeader[];
+  } | null>(null);
 
   // Update Period Configs when periodsPerDay changes
   useEffect(() => {
@@ -635,6 +644,34 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
       return { count: courses.length, students: studentTotal, depts: depts.length };
   };
 
+  const handleDeleteEmptyDay = (dateStr: string) => {
+      if (uniqueDates.length <= 1) {
+          alert('لا يمكن حذف آخر يوم في الجدول.');
+          return;
+      }
+
+      const slotIds = slots.filter(s => s.dateStr === dateStr).map(s => s.id);
+      const hasAssignedCourses = schedule.some(c => c.assignedSlot !== null && slotIds.includes(c.assignedSlot));
+      if (hasAssignedCourses) {
+          alert('لا يمكن حذف يوم يحتوي على مقررات.');
+          return;
+      }
+
+      if (!confirm(`هل تريد حذف اليوم ${dateStr} من الجدول؟`)) return;
+
+      const remainingSlots = slots.filter(s => s.dateStr !== dateStr);
+      setSlots(remainingSlots);
+
+      if (swapPeriodDate === dateStr) {
+          const nextDate = Array.from(new Set(remainingSlots.map(s => s.dateStr))).sort()[0] || '';
+          setSwapPeriodDate(nextDate);
+      }
+
+      setDraggedItemIndex(null);
+      setDragOverIndex(null);
+      setExamDays((prev) => Math.max(1, prev - 1));
+  };
+
   const getPeriodSummary = (dateStr: string, pIdx: number) => {
       const slot = slots.find(s => s.dateStr === dateStr && s.periodIndex === pIdx);
       if (!slot) return { count: 0, students: 0 };
@@ -1114,169 +1151,18 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
   };
   
   const handlePrintMatrix = () => {
-      const dates = Array.from(new Set(slots.map(s => s.dateStr)));
-      // Get unique periods based on periodIndex to ensure correct order
-      // Fix: Explicitly cast to number[] before sort to satisfy TS
-      const periods: number[] = (Array.from(new Set(slots.map(s => s.periodIndex))) as number[]).sort((a: number, b: number) => a - b);
-      
-      const printWindow = window.open('', '_blank');
-      if (!printWindow) return;
-
-      let rowsHtml = '';
-      dates.forEach((date: any) => {
-          const dual = getDualDate(String(date));
-          let colsHtml = `<td class="header-col">
-            <div class="date-cell">
-              <span class="day-name">${dual.dayName}</span>
-              <span class="date-num">${dual.greg}</span>
-              <span class="date-hijri">${dual.hijri}</span>
-            </div>
-          </td>`;
-          
-          periods.forEach(pIdx => {
-              // Find slot for this date and period
-              const slot = slots.find(s => s.dateStr === date && s.periodIndex === pIdx);
-              let content = '';
-              
-              if (slot) {
-                  const slotCourses = schedule.filter(c => c.assignedSlot === slot.id);
-                  const totalStudentsInSlot = slotCourses.reduce((acc, c) => acc + c.studentCount, 0);
-                  
-                  if (slotCourses.length > 0) {
-                      // Add slot summary header
-                      content += `<div class="slot-summary">إجمالي: ${totalStudentsInSlot} متدرب</div>`;
-                      
-                      slotCourses.forEach(c => {
-                          const codeStr = String(c.code);
-                          const displayCode = codeStr.includes('::') ? codeStr.split('::')[0] : codeStr;
-                          // Show icon/text for type
-                          const isLab = (examTypes[c.code] || 'Paper') === 'Blackboard';
-
-                          content += `
-                            <div class="course-box dept-${c.department === 'عام' ? 'general' : 'major'} ${isLab ? 'is-lab' : ''}">
-                                <strong>${c.name}</strong>
-                                <div class="meta">
-                                    <span class="code">${displayCode}</span>
-                                    <span class="count">${c.studentCount}</span>
-                                </div>
-                                <div class="meta" style="margin-top:2px;">
-                                    <span class="dept">${c.department}</span>
-                                    ${isLab ? '<span class="lab-badge">معمل</span>' : ''}
-                                </div>
-                            </div>
-                          `;
-                      });
-                  } else {
-                      content = '<span class="empty">-</span>';
-                  }
-              } else {
-                  content = '<span class="empty">X</span>';
-              }
-              colsHtml += `<td class="data-col">${content}</td>`;
-          });
-          rowsHtml += `<tr>${colsHtml}</tr>`;
-      });
-
-      // Headers for periods
-      const timeHeaders = periods.map(pIdx => {
-          const slot = slots.find(s => s.periodIndex === pIdx);
-          return `<th>الفترة ${pIdx+1} <span style="font-weight:normal; font-size:10px;">(${slot?.timeLabel || ''})</span></th>`;
-      }).join('');
-
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html dir="rtl">
-        <head>
-          <title>الجدول المقترح</title>
-          <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700&display=swap" rel="stylesheet">
-          <style>
-            @page { size: A3 landscape; margin: 10mm; }
-            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-            body { font-family: 'Tajawal', sans-serif; padding: 20px; background: #fff; }
-            
-            .report-header { text-align: center; border-bottom: 3px solid #006d5b; padding-bottom: 10px; margin-bottom: 15px; }
-            .report-header h1 { margin: 0; color: #006d5b; font-size: 24px; }
-            .report-header h2 { margin: 5px 0 0; color: #555; font-size: 16px; }
-
-            table { width: 100%; border-collapse: collapse; font-size: 11px; border: 1px solid #000; }
-            th, td { border: 1px solid #444; vertical-align: top; }
-            th { background-color: #f3f4f6; text-align: center; padding: 10px; font-weight: bold; border-bottom: 2px solid #000; }
-            
-            .header-col { background: #f9f9f9; font-weight: bold; width: 100px; text-align: center; vertical-align: middle; }
-            .date-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
-            .day-name { font-size: 14px; margin-bottom: 4px; }
-            .date-num { font-size: 12px; color: #666; font-family: sans-serif; }
-            .date-hijri { font-size: 11px; color: #006d5b; margin-top: 2px; }
-            .data-col { padding: 4px; }
-
-            .slot-summary { 
-                background: #eef2ff; 
-                color: #3730a3; 
-                font-size: 10px; 
-                text-align: center; 
-                padding: 2px; 
-                border-radius: 3px; 
-                margin-bottom: 4px; 
-                font-weight: bold;
-                border: 1px dashed #c7d2fe;
-            }
-
-            .course-box { 
-                border: 1px solid #ccc; 
-                padding: 4px; 
-                margin-bottom: 4px; 
-                border-radius: 4px; 
-                background: #fff; 
-                display: flex; 
-                flex-direction: column;
-                page-break-inside: avoid;
-            }
-            .course-box.is-lab {
-                background: #fdf4ff;
-                border-color: #d8b4fe;
-            }
-
-            .course-box strong { font-size: 11px; margin-bottom: 2px; color: #111; }
-            .meta { display: flex; justify-content: space-between; align-items: center; }
-            .code { font-size: 10px; color: #555; }
-            .count { 
-                font-size: 9px; 
-                background: #000; 
-                color: #fff; 
-                padding: 1px 4px; 
-                border-radius: 3px; 
-            }
-            .dept { font-size: 9px; color: #777; }
-            .lab-badge { font-size: 9px; background: #9333ea; color: white; padding: 0 3px; border-radius: 3px; }
-            
-            .empty { color: #ccc; display: block; text-align: center; margin-top: 20px; font-size: 20px; }
-            
-            .dept-general { border-right: 4px solid #cba052; }
-            .dept-major { border-right: 4px solid #006d5b; }
-          </style>
-        </head>
-        <body>
-          <div class="report-header">
-              <h1>الكلية التقنية بأحد رفيدة</h1>
-              <h2>جدول الاختبارات المقترح (بناء آلي)</h2>
-          </div>
-          <table>
-            <thead>
-                <tr>
-                    <th>اليوم / التاريخ</th>
-                    ${timeHeaders}
-                </tr>
-            </thead>
-            <tbody>
-                ${rowsHtml}
-            </tbody>
-          </table>
-          <script>window.onload = function() { window.print(); }</script>
-        </body>
-        </html>
-      `;
-      printWindow.document.write(htmlContent);
-      printWindow.document.close();
+      const assigned = schedule.filter((c) => c.assignedSlot !== null);
+      if (assigned.length === 0) {
+          alert('لا توجد مقررات موزعة للطباعة. يرجى بناء الجدول أولاً.');
+          return;
+      }
+      if (slots.length === 0) {
+          alert('لا توجد فترات زمنية في الجدول.');
+          return;
+      }
+      const built = buildScheduleFromBuilder(schedule, slots, periodConfigs);
+      setMatrixPrintData(built);
+      setShowMatrixPrint(true);
   };
 
   const handleDownloadTemplate = () => {
@@ -1698,6 +1584,13 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
                                                       <div className="flex flex-col gap-1.5 h-full">
                                                           {coursesInSlot.map(c => {
                                                               const isLab = (examTypes[c.code] || 'Paper') === 'Blackboard';
+                                                              const splitSuffix = String(c.code).includes('::') ? String(c.code).split('::')[1] : '';
+                                                              const isSplitBySpecialization = !!(c.isSplit && splitSuffix && splitSuffix === c.specialization);
+                                                              const hasMultipleSpecializations = !!(c.specializationDistribution && Object.keys(c.specializationDistribution).length > 1);
+                                                              const specializationLabel =
+                                                                  isSplitBySpecialization
+                                                                      ? (c.specialization || 'عام')
+                                                                      : (hasMultipleSpecializations ? 'جميع التخصصات' : (c.specialization || 'عام'));
                                                               return (
                                                                   <div 
                                                                       key={c.code} 
@@ -1712,7 +1605,10 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
                                                                   >
                                                                       <div className="font-bold truncate text-gray-800 mb-1">{c.name}</div>
                                                                       <div className="flex justify-between items-center text-[10px] text-gray-500">
-                                                                          <span className="font-mono bg-white/50 px-1 rounded">{c.code.split('::')[0]}</span>
+                                                                          <span className="flex flex-col items-start gap-0.5">
+                                                                              <span className="font-mono bg-white/50 px-1 rounded">{c.code.split('::')[0]}</span>
+                                                                              <span className="text-[10px] text-gray-600">{specializationLabel}</span>
+                                                                          </span>
                                                                           <span className="font-bold">{c.studentCount} طالب</span>
                                                                       </div>
                                                                       
@@ -1849,6 +1745,18 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
                                                   <span>الأقسام:</span>
                                                   <span className="font-bold">{summary.depts}</span>
                                               </div>
+                                              {summary.count === 0 && (
+                                                  <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                          e.stopPropagation();
+                                                          handleDeleteEmptyDay(String(date));
+                                                      }}
+                                                      className="mt-2 w-full text-xs font-bold bg-red-50 text-red-700 border border-red-200 rounded px-2 py-1 hover:bg-red-100"
+                                                  >
+                                                      حذف هذا اليوم الفارغ
+                                                  </button>
+                                              )}
                                               {!isTarget && (
                                                   <div className="absolute top-2 left-2 opacity-50">
                                                       <Move size={16}/>
@@ -2080,6 +1988,21 @@ const AiScheduleBuilder: React.FC<AiScheduleBuilderProps> = ({ data, setData, cu
                   </div>
               </div>
           </div>
+      )}
+
+      {showMatrixPrint && matrixPrintData && (
+        <ReportEditorView
+          scheduleData={matrixPrintData.scheduleData}
+          periodHeaders={matrixPrintData.periodHeaders}
+          customHeaderImage={null}
+          initialFormat="A3"
+          onClose={() => {
+            setShowMatrixPrint(false);
+            setMatrixPrintData(null);
+          }}
+          reportTitle="جدول الاختبارات النهائية الشامل والموحد — الكلية التقنية بأحد رفيدة"
+          reportSubtitle="الفصل التدريبي الثاني ١٤٤٧ هـ / ٢٠٢٦ م"
+        />
       )}
     </div>
   );
