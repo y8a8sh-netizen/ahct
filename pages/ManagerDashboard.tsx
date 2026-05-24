@@ -1,6 +1,6 @@
 
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Upload, AlertCircle, CheckCircle, Play, PieChart, Activity, Trash2, Edit, Plus, X, Save, Download, Printer, Grid, FileDown, UserCheck, Share2, Smartphone, FileCheck } from 'lucide-react';
 import { parseCSV, validateSchedule, getDualDate, parseAnyDate } from '../utils/helpers';
 import { getPortalUrl } from '../utils/routes';
@@ -250,6 +250,85 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
         // Hint for user
         setTimeout(() => alert('تم استيراد البيانات بنجاح. يمكنك الآن الانتقال لخطوة توزيع اللجان.'), 300);
     }
+  };
+
+  const cleanupLinkedData = (state: any) => {
+    const exams = Array.isArray(state.exams) ? state.exams : [];
+    const students = Array.isArray(state.students) ? state.students : [];
+    const rooms = Array.isArray(state.rooms) ? state.rooms : [];
+    const proctors = Array.isArray(state.proctors) ? state.proctors : [];
+    const committees = Array.isArray(state.committees) ? state.committees : [];
+
+    const examCodes = new Set(exams.map((exam: Exam) => exam.courseCode));
+    const roomIds = new Set(rooms.map((room: Room) => room.id));
+    const proctorIds = new Set(proctors.map((proctor: Proctor) => proctor.id));
+
+    const normalizedStudents = students.map((student: Student) => ({
+      ...student,
+      courseCodes: Array.from(new Set((student.courseCodes || []).filter((code) => examCodes.has(code)))),
+    }));
+    const studentIds = new Set(normalizedStudents.map((student: Student) => student.id));
+
+    const normalizedCommittees = committees
+      .map((committee: Committee) => ({
+        ...committee,
+        studentIds: (committee.studentIds || []).filter((studentId) => studentIds.has(studentId)),
+        proctorIds: (committee.proctorIds || []).filter((proctorId) => proctorIds.has(proctorId)),
+      }))
+      .filter((committee: Committee) => (
+        examCodes.has(committee.examCode) &&
+        roomIds.has(committee.roomId) &&
+        committee.studentIds.length > 0 &&
+        committee.proctorIds.length > 0
+      ));
+
+    return {
+      students: normalizedStudents,
+      committees: normalizedCommittees,
+    };
+  };
+
+  const handleClearDataFile = (type: 'exams' | 'students' | 'rooms' | 'proctors') => {
+    if (isReadOnly) return;
+
+    const labels = {
+      exams: 'الاختبارات',
+      students: 'المتدربين',
+      rooms: 'القاعات والمعامل',
+      proctors: 'المراقبين',
+    };
+
+    const counts = {
+      exams: data.exams.length,
+      students: data.students.length,
+      rooms: data.rooms.length,
+      proctors: data.proctors.length,
+    };
+
+    if (counts[type] === 0) return;
+
+    const confirmed = window.confirm(
+      `هل أنت متأكد من حذف بيانات ${labels[type]} فقط؟\nسيتم تنظيف أي روابط مرتبطة تلقائيًا للحفاظ على سلامة النظام.`
+    );
+    if (!confirmed) return;
+
+    setData((prev: any) => {
+      const nextState = { ...prev };
+      if (type === 'exams') nextState.exams = [];
+      if (type === 'students') nextState.students = [];
+      if (type === 'rooms') nextState.rooms = [];
+      if (type === 'proctors') nextState.proctors = [];
+
+      const cleaned = cleanupLinkedData(nextState);
+      return {
+        ...nextState,
+        ...cleaned,
+      };
+    });
+
+    setTimeout(() => {
+      alert(`تم مسح بيانات ${labels[type]} بنجاح.`);
+    }, 150);
   };
 
   const getDataCount = (data: any) => {
@@ -1412,6 +1491,46 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     { name: 'اللجان', value: data.committees.length },
   ];
 
+  const examCodes = new Set(data.exams.map((exam) => exam.courseCode));
+  const hasStudentsWithLinkedCourses = data.students.some(
+    (student) => (student.courseCodes || []).some((code) => examCodes.has(code))
+  );
+  const hasPaperExams = data.exams.some((exam) => exam.type === 'Paper');
+  const hasLabExams = data.exams.some((exam) => exam.type === 'Blackboard');
+  const hasHallRooms = data.rooms.some((room) => room.type === 'Hall');
+  const hasLabRooms = data.rooms.some((room) => room.type === 'Lab');
+
+  const missingWorkflowRequirements: string[] = [];
+  if (data.exams.length === 0) missingWorkflowRequirements.push('رفع ملف الاختبارات');
+  if (data.students.length === 0) missingWorkflowRequirements.push('رفع ملف المتدربين');
+  if (data.rooms.length === 0) missingWorkflowRequirements.push('رفع ملف القاعات والمعامل');
+  if (data.proctors.length === 0) missingWorkflowRequirements.push('رفع ملف المراقبين');
+  if (data.students.length > 0 && !hasStudentsWithLinkedCourses) {
+    missingWorkflowRequirements.push('ربط المتدربين بمقررات موجودة في ملف الاختبارات');
+  }
+  if (hasPaperExams && !hasHallRooms) {
+    missingWorkflowRequirements.push('توفير قاعات (Hall) للاختبارات الورقية');
+  }
+  if (hasLabExams && !hasLabRooms) {
+    missingWorkflowRequirements.push('توفير معامل (Lab) لاختبارات البلاك بورد/المعمل');
+  }
+
+  const isCreateReportsLocked = missingWorkflowRequirements.length > 0;
+
+  const handleSectionChange = (section: 'upload' | 'create' | 'reports' | 'manage-students') => {
+    if ((section === 'create' || section === 'reports') && isCreateReportsLocked) {
+      setActiveSection('upload');
+      return;
+    }
+    setActiveSection(section);
+  };
+
+  useEffect(() => {
+    if ((activeSection === 'create' || activeSection === 'reports') && isCreateReportsLocked) {
+      setActiveSection('upload');
+    }
+  }, [activeSection, isCreateReportsLocked]);
+
   return (
     <div className="space-y-6 relative">
       {/* Read-Only Warning Banner */}
@@ -1438,25 +1557,36 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
             </button>
             <div className="h-8 w-px bg-gray-300 mx-2"></div>
             <button 
-                onClick={() => setActiveSection('upload')}
+                onClick={() => handleSectionChange('upload')}
                 className={`px-4 py-2 rounded-lg ${activeSection === 'upload' ? 'bg-tvtc-green text-white' : 'bg-gray-100'}`}
             >
                 1. البيانات
             </button>
             <button 
-                onClick={() => setActiveSection('create')}
-                className={`px-4 py-2 rounded-lg ${activeSection === 'create' ? 'bg-tvtc-green text-white' : 'bg-gray-100'}`}
+                onClick={() => handleSectionChange('create')}
+                disabled={isCreateReportsLocked}
+                title={isCreateReportsLocked ? 'يلزم رفع الملفات الأساسية أولاً' : ''}
+                className={`px-4 py-2 rounded-lg ${activeSection === 'create' ? 'bg-tvtc-green text-white' : 'bg-gray-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
             >
                 2. إنشاء اللجان
             </button>
             <button 
-                onClick={() => setActiveSection('reports')}
-                className={`px-4 py-2 rounded-lg ${activeSection === 'reports' ? 'bg-tvtc-green text-white' : 'bg-gray-100'}`}
+                onClick={() => handleSectionChange('reports')}
+                disabled={isCreateReportsLocked}
+                title={isCreateReportsLocked ? 'يلزم رفع الملفات الأساسية أولاً' : ''}
+                className={`px-4 py-2 rounded-lg ${activeSection === 'reports' ? 'bg-tvtc-green text-white' : 'bg-gray-100'} disabled:opacity-50 disabled:cursor-not-allowed`}
             >
                 3. التقارير
             </button>
         </div>
       </header>
+
+      {isCreateReportsLocked && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm">
+          <p className="font-bold text-amber-800 mb-2">تبويبا إنشاء اللجان والتقارير مقفولان مؤقتاً حتى اكتمال البيانات.</p>
+          <p className="text-amber-700">المطلوب حالياً: {missingWorkflowRequirements.join('، ')}.</p>
+        </div>
+      )}
 
       {/* Share Link Modal */}
       {showShareModal && (
@@ -1590,18 +1720,38 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                       <div>
                           <div className="flex justify-between items-end mb-1">
                               <label className="block text-sm font-medium">ملف الاختبارات</label>
-                              <button onClick={() => handleDownloadTemplate('exams')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
-                                  <FileDown size={14}/> نموذج
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleClearDataFile('exams')}
+                                  disabled={isReadOnly || data.exams.length === 0}
+                                  title={isReadOnly ? 'الصلاحيات: قراءة فقط' : data.exams.length === 0 ? 'لا توجد بيانات للحذف' : 'حذف بيانات ملف الاختبارات فقط'}
+                                  className="text-xs text-red-600 flex items-center gap-1 hover:text-red-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 size={14}/> مسح الملف
+                                </button>
+                                <button onClick={() => handleDownloadTemplate('exams')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
+                                    <FileDown size={14}/> نموذج
+                                </button>
+                              </div>
                           </div>
                           <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'exams')} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-tvtc-green/10 file:text-tvtc-green hover:file:bg-tvtc-green/20 disabled:opacity-50 disabled:cursor-not-allowed"/>
                       </div>
                       <div>
                           <div className="flex justify-between items-end mb-1">
                               <label className="block text-sm font-medium">ملف المتدربين</label>
-                              <button onClick={() => handleDownloadTemplate('students')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
-                                  <FileDown size={14}/> نموذج
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleClearDataFile('students')}
+                                  disabled={isReadOnly || data.students.length === 0}
+                                  title={isReadOnly ? 'الصلاحيات: قراءة فقط' : data.students.length === 0 ? 'لا توجد بيانات للحذف' : 'حذف بيانات ملف المتدربين فقط'}
+                                  className="text-xs text-red-600 flex items-center gap-1 hover:text-red-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 size={14}/> مسح الملف
+                                </button>
+                                <button onClick={() => handleDownloadTemplate('students')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
+                                    <FileDown size={14}/> نموذج
+                                </button>
+                              </div>
                           </div>
                           <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'students')} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-tvtc-green/10 file:text-tvtc-green hover:file:bg-tvtc-green/20 disabled:opacity-50 disabled:cursor-not-allowed"/>
                           <p className="text-xs text-gray-400 mt-1">ملاحظة: سيتم تسجيل المتدرب فقط في المقررات التي تطابق تخصصه أو المتاحة لجميع التخصصات.</p>
@@ -1612,6 +1762,14 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                           <div className="flex justify-between items-center mb-2">
                               <label className="block text-sm font-medium">القاعات والمعامل</label>
                               <div className="flex gap-2">
+                                <button
+                                    onClick={() => handleClearDataFile('rooms')}
+                                    disabled={isReadOnly || data.rooms.length === 0}
+                                    title={isReadOnly ? 'الصلاحيات: قراءة فقط' : data.rooms.length === 0 ? 'لا توجد بيانات للحذف' : 'حذف بيانات القاعات والمعامل فقط'}
+                                    className="text-xs text-red-600 flex items-center gap-1 hover:text-red-800 transition-colors bg-red-50 px-2 py-1 rounded disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                    <Trash2 size={14}/> مسح الملف
+                                </button>
                                 <button onClick={() => handleDownloadTemplate('rooms')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors bg-blue-50 px-2 py-1 rounded">
                                     <FileDown size={14}/> نموذج
                                 </button>
@@ -1660,9 +1818,19 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                       <div className="border-t border-gray-100 pt-4">
                           <div className="flex justify-between items-end mb-1">
                               <label className="block text-sm font-medium">المراقبين</label>
-                              <button onClick={() => handleDownloadTemplate('proctors')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
-                                  <FileDown size={14}/> نموذج
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleClearDataFile('proctors')}
+                                  disabled={isReadOnly || data.proctors.length === 0}
+                                  title={isReadOnly ? 'الصلاحيات: قراءة فقط' : data.proctors.length === 0 ? 'لا توجد بيانات للحذف' : 'حذف بيانات ملف المراقبين فقط'}
+                                  className="text-xs text-red-600 flex items-center gap-1 hover:text-red-800 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                >
+                                  <Trash2 size={14}/> مسح الملف
+                                </button>
+                                <button onClick={() => handleDownloadTemplate('proctors')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
+                                    <FileDown size={14}/> نموذج
+                                </button>
+                              </div>
                           </div>
                           <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'proctors')} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-tvtc-green/10 file:text-tvtc-green hover:file:bg-tvtc-green/20 disabled:opacity-50 disabled:cursor-not-allowed"/>
                       </div>
