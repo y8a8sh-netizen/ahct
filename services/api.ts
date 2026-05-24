@@ -1,5 +1,5 @@
 
-import { ActivityLog, AuthLoginResponse, SystemState, SystemUser, UserRole, UserSession } from '../types';
+import { AuthLoginResponse, SystemState, SystemUser, UserRole, UserSession } from '../types';
 import { clearAuthToken, getAuthHeaders, setAuthToken } from '../utils/auth';
 
 // تحديد رابط السيرفر ديناميكياً بناءً على رابط المتصفح
@@ -38,7 +38,6 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                ...getAuthHeaders(),
             },
             body: JSON.stringify(data),
         });
@@ -137,32 +136,6 @@ export const deleteSystemUser = async (id: number): Promise<{ ok: boolean; error
         });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) return { ok: false, error: body.error || 'فشل الحذف' };
-        return { ok: true };
-    } catch {
-        return { ok: false, error: 'تعذر الاتصال بالخادم' };
-    }
-};
-
-export const fetchActivityLogs = async (limit = 200): Promise<ActivityLog[] | null> => {
-    try {
-        const url = `${getApiUrl()}/logs?limit=${limit}`;
-        const response = await fetch(url, { headers: getAuthHeaders() });
-        if (!response.ok) return null;
-        return await response.json();
-    } catch {
-        return null;
-    }
-};
-
-export const clearActivityLogs = async (): Promise<{ ok: boolean; error?: string }> => {
-    try {
-        const url = `${getApiUrl()}/logs`;
-        const response = await fetch(url, {
-            method: 'DELETE',
-            headers: getAuthHeaders(),
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) return { ok: false, error: body.error || 'فشل مسح السجل' };
         return { ok: true };
     } catch {
         return { ok: false, error: 'تعذر الاتصال بالخادم' };

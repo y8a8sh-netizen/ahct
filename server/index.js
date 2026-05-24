@@ -278,47 +278,6 @@ const requireManager = (req, res, next) => {
     }
 };
 
-const getAuthPayload = (req) => {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) return null;
-    try {
-        return jwt.verify(token, JWT_SECRET);
-    } catch {
-        return null;
-    }
-};
-
-const normalizeActorRole = (role) => {
-    if (role === 'manager' || role === 'dept_head' || role === 'system') return role;
-    return 'unknown';
-};
-
-async function insertActivityLog(entry) {
-    const payload = {
-        actor_id: entry.actor_id ? String(entry.actor_id) : null,
-        actor_name: String(entry.actor_name || 'غير معروف'),
-        actor_role: normalizeActorRole(entry.actor_role),
-        action: String(entry.action || 'unknown_action'),
-        details: entry.details ? String(entry.details) : null,
-    };
-
-    try {
-        if (useSupabaseClient) {
-            const { error } = await supabase.from('activity_logs').insert(payload);
-            if (error) throw error;
-            return;
-        }
-        await pool.query(
-            `INSERT INTO activity_logs (actor_id, actor_name, actor_role, action, details)
-             VALUES ($1, $2, $3, $4, $5)`,
-            [payload.actor_id, payload.actor_name, payload.actor_role, payload.action, payload.details]
-        );
-    } catch (error) {
-        console.warn('Activity log skipped:', error.message || error);
-    }
-}
-
 async function findUserByLogin(username, role) {
     if (useSupabaseClient) {
         const { data, error } = await supabase
@@ -384,22 +343,11 @@ app.post('/api/auth/login', async (req, res) => {
 
         const row = await findUserByLogin(trimmedUsername, role);
         if (!row) {
-            await insertActivityLog({
-                actor_name: trimmedUsername || 'غير معروف',
-                actor_role: role || 'unknown',
-                action: 'login_failed_user_not_found',
-            });
             return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
         }
 
         const valid = await bcrypt.compare(trimmedPassword, row.password_hash);
         if (!valid) {
-            await insertActivityLog({
-                actor_id: row.id,
-                actor_name: row.name || row.username,
-                actor_role: row.role,
-                action: 'login_failed_wrong_password',
-            });
             return res.status(401).json({ error: 'اسم المستخدم أو كلمة المرور غير صحيحة' });
         }
 
@@ -409,13 +357,6 @@ app.post('/api/auth/login', async (req, res) => {
             JWT_SECRET,
             { expiresIn: '7d' }
         );
-
-        await insertActivityLog({
-            actor_id: session.id,
-            actor_name: session.name,
-            actor_role: session.role,
-            action: 'login_success',
-        });
 
         res.json({ token, user: session });
     } catch (err) {
@@ -462,13 +403,6 @@ app.post('/api/users', requireManager, async (req, res) => {
                 if (error.code === '23505') return res.status(409).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
                 throw error;
             }
-            await insertActivityLog({
-                actor_id: req.authUser.id,
-                actor_name: req.authUser.name || req.authUser.username,
-                actor_role: req.authUser.role,
-                action: 'user_created',
-                details: `user_id=${data.id}, username=${data.username}, role=${data.role}`,
-            });
             return res.status(201).json(data);
         }
 
@@ -478,13 +412,6 @@ app.post('/api/users', requireManager, async (req, res) => {
              RETURNING id, username, role, name, created_at`,
             [trimmedUsername, hash, role, trimmedName]
         );
-        await insertActivityLog({
-            actor_id: req.authUser.id,
-            actor_name: req.authUser.name || req.authUser.username,
-            actor_role: req.authUser.role,
-            action: 'user_created',
-            details: `user_id=${result.rows[0].id}, username=${result.rows[0].username}, role=${result.rows[0].role}`,
-        });
         res.status(201).json(result.rows[0]);
     } catch (err) {
         if (err.code === '23505') {
@@ -551,13 +478,6 @@ app.put('/api/users/:id', requireManager, async (req, res) => {
                 if (error.code === '23505') return res.status(409).json({ error: 'اسم المستخدم مستخدم مسبقاً' });
                 throw error;
             }
-            await insertActivityLog({
-                actor_id: req.authUser.id,
-                actor_name: req.authUser.name || req.authUser.username,
-                actor_role: req.authUser.role,
-                action: 'user_updated',
-                details: `user_id=${data.id}, fields=${Object.keys(updates).join(',')}`,
-            });
             return res.json(data);
         }
 
@@ -574,13 +494,6 @@ app.put('/api/users/:id', requireManager, async (req, res) => {
              RETURNING id, username, role, name, created_at`,
             values
         );
-        await insertActivityLog({
-            actor_id: req.authUser.id,
-            actor_name: req.authUser.name || req.authUser.username,
-            actor_role: req.authUser.role,
-            action: 'user_updated',
-            details: `user_id=${result.rows[0].id}, fields=${Object.keys(updates).join(',')}`,
-        });
         res.json(result.rows[0]);
     } catch (err) {
         if (err.code === '23505') {
@@ -621,60 +534,10 @@ app.delete('/api/users/:id', requireManager, async (req, res) => {
             await pool.query('DELETE FROM users WHERE id = $1', [userId]);
         }
 
-        await insertActivityLog({
-            actor_id: req.authUser.id,
-            actor_name: req.authUser.name || req.authUser.username,
-            actor_role: req.authUser.role,
-            action: 'user_deleted',
-            details: `user_id=${userId}, role=${target.role}`,
-        });
-
         res.json({ success: true });
     } catch (err) {
         console.error('Delete user error:', err);
         res.status(500).json({ error: 'فشل حذف المستخدم' });
-    }
-});
-
-app.get('/api/logs', requireManager, async (req, res) => {
-    try {
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 200, 1), 1000);
-        if (useSupabaseClient) {
-            const { data, error } = await supabase
-                .from('activity_logs')
-                .select('id, actor_id, actor_name, actor_role, action, details, created_at')
-                .order('created_at', { ascending: false })
-                .limit(limit);
-            if (error) throw error;
-            return res.json(data || []);
-        }
-        const result = await pool.query(
-            `SELECT id, actor_id, actor_name, actor_role, action, details, created_at
-             FROM activity_logs
-             ORDER BY created_at DESC
-             LIMIT $1`,
-            [limit]
-        );
-        return res.json(result.rows);
-    } catch (err) {
-        console.error('List logs error:', err);
-        return res.status(500).json({ error: 'فشل جلب السجلات' });
-    }
-});
-
-app.delete('/api/logs', requireManager, async (req, res) => {
-    try {
-        if (useSupabaseClient) {
-            const { error } = await supabase.from('activity_logs').delete().neq('id', -1);
-            if (error) throw error;
-        } else {
-            await pool.query('DELETE FROM activity_logs');
-        }
-
-        return res.json({ success: true });
-    } catch (err) {
-        console.error('Clear logs error:', err);
-        return res.status(500).json({ error: 'فشل حذف السجلات' });
     }
 });
 
@@ -781,23 +644,6 @@ async function initDatabase() {
                 created_by UUID,
                 created_at TIMESTAMP DEFAULT NOW()
             )
-        `);
-
-        await client.query(`
-            CREATE TABLE IF NOT EXISTS activity_logs (
-                id BIGSERIAL PRIMARY KEY,
-                actor_id TEXT,
-                actor_name TEXT NOT NULL,
-                actor_role TEXT NOT NULL CHECK (actor_role IN ('manager', 'dept_head', 'system', 'unknown')),
-                action TEXT NOT NULL,
-                details TEXT,
-                created_at TIMESTAMP DEFAULT NOW()
-            )
-        `);
-
-        await client.query(`
-            CREATE INDEX IF NOT EXISTS idx_activity_logs_created_at
-            ON activity_logs(created_at DESC)
         `);
 
         await client.query('COMMIT');
@@ -932,7 +778,6 @@ app.get('/api/state', async (req, res) => {
 // 2. POST Full State (Sync)
 app.post('/api/sync', async (req, res) => {
     const data = req.body;
-    const authUser = getAuthPayload(req);
     console.log(`[${new Date().toLocaleTimeString()}] 📥 Received sync request (Committees: ${data.committees?.length || 0})`);
 
     if (useSupabaseClient) {
@@ -1021,13 +866,6 @@ app.post('/api/sync', async (req, res) => {
                 })));
             }
 
-            await insertActivityLog({
-                actor_id: authUser?.id,
-                actor_name: authUser?.name || authUser?.username || 'Unknown User',
-                actor_role: authUser?.role || 'unknown',
-                action: 'system_sync',
-                details: `students=${data.students?.length || 0}, exams=${data.exams?.length || 0}, committees=${data.committees?.length || 0}`,
-            });
             return res.json({ success: true, message: 'Database synchronized successfully' });
         } catch (err) {
             console.error('Error syncing data via Supabase HTTP client:', err);
@@ -1142,13 +980,6 @@ app.post('/api/sync', async (req, res) => {
 
         await client.query('COMMIT');
         console.log(`[${new Date().toLocaleTimeString()}] ✅ Database synchronized successfully`);
-        await insertActivityLog({
-            actor_id: authUser?.id,
-            actor_name: authUser?.name || authUser?.username || 'Unknown User',
-            actor_role: authUser?.role || 'unknown',
-            action: 'system_sync',
-            details: `students=${data.students?.length || 0}, exams=${data.exams?.length || 0}, committees=${data.committees?.length || 0}`,
-        });
         res.json({ success: true, message: "Database synchronized successfully" });
         
     } catch (err) {
