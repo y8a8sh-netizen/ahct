@@ -104,6 +104,16 @@ export interface SystemUser {
   created_at?: string;
 }
 
+export interface ActivityLog {
+  id: number;
+  actor_id?: string;
+  actor_name: string;
+  actor_role: 'manager' | 'dept_head' | 'system' | 'unknown';
+  action: string;
+  details?: string;
+  created_at: string;
+}
+
 export interface AuthLoginResponse {
   token: string;
   user: UserSession;
