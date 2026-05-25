@@ -254,7 +254,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
                                         gregClassName="text-sm font-medium text-gray-800"
                                         hijriClassName="text-xs text-gray-500 mt-0.5"
                                     />
-                                    <div className="text-xs text-tvtc-green font-bold mt-0.5"><ScheduleDateDisplay date={exam.date} /></div>
                                 </div>
                                 <div className="bg-orange-50 p-2.5 rounded-lg border border-orange-200">
                                     <div className="flex items-center gap-1.5 text-orange-700 mb-1">
