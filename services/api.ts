@@ -1,5 +1,5 @@
 
-import { AuthLoginResponse, SystemState, SystemUser, UserRole, UserSession } from '../types';
+import { AuthLoginResponse, StudentInstructions, SystemState, SystemUser, UserRole, UserSession } from '../types';
 import { clearAuthToken, getAuthHeaders, setAuthToken } from '../utils/auth';
 
 // تحديد رابط السيرفر ديناميكياً بناءً على رابط المتصفح
@@ -137,6 +137,46 @@ export const deleteSystemUser = async (id: number): Promise<{ ok: boolean; error
         const body = await response.json().catch(() => ({}));
         if (!response.ok) return { ok: false, error: body.error || 'فشل الحذف' };
         return { ok: true };
+    } catch {
+        return { ok: false, error: 'تعذر الاتصال بالخادم' };
+    }
+};
+
+export const fetchStudentInstructions = async (): Promise<StudentInstructions | null> => {
+    try {
+        const url = `${getApiUrl()}/instructions`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        return null;
+    }
+};
+
+export const updateStudentInstructions = async (payload: {
+    title: string;
+    text: string;
+    imageDataUrl: string;
+}): Promise<{ ok: true; instructions: StudentInstructions } | { ok: false; error: string }> => {
+    try {
+        const url = `${getApiUrl()}/instructions`;
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+            body: JSON.stringify(payload),
+        });
+        const raw = await response.text();
+        let body: any = {};
+        try {
+            body = raw ? JSON.parse(raw) : {};
+        } catch {
+            body = {};
+        }
+        if (!response.ok) {
+            const details = body.error || raw || `HTTP ${response.status}`;
+            return { ok: false, error: `فشل حفظ التعليمات: ${details}` };
+        }
+        return { ok: true, instructions: body as StudentInstructions };
     } catch {
         return { ok: false, error: 'تعذر الاتصال بالخادم' };
     }

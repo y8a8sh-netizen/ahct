@@ -11,6 +11,7 @@ import AdminScheduleEditor from './pages/AdminScheduleEditor';
 import { Student, Exam, Room, Proctor, Committee, DraftSchedule, SystemState, UserSession } from './types';
 import PrintProctorSchedules from './pages/PrintProctorSchedules';
 import PermissionsManagement from './pages/PermissionsManagement';
+import InstructionsManagement from './pages/InstructionsManagement';
 import { fetchSystemState, logoutUser, syncSystemState } from './services/api';
 import { readPortalFromBrowser, setPortalPath, createGuestPortalSession } from './utils/routes';
 
@@ -194,6 +195,9 @@ const App: React.FC = () => {
             )}
             {activeTab === 'permissions' && currentUser.role === 'manager' && (
                 <PermissionsManagement currentUser={currentUser} />
+            )}
+            {activeTab === 'instructions' && currentUser.role === 'manager' && (
+                <InstructionsManagement currentUserName={currentUser.name} />
             )}
             {activeTab === 'dept' && (currentUser.role === 'manager' || currentUser.role === 'dept_head') && (
                 <DeptHeadPortal data={data} />

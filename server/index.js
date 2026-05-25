@@ -325,6 +325,76 @@ async function countManagers() {
     return result.rows[0].c;
 }
 
+async function getStudentInstructions() {
+    const defaultTitle = 'تعليمات عامة قبل الاختبار';
+    if (useSupabaseClient) {
+        const { data, error } = await supabase
+            .from('app_settings')
+            .select('value, updated_at')
+            .eq('key', 'student_instructions')
+            .maybeSingle();
+        if (error) throw error;
+        const value = data?.value || {};
+        return {
+            title: value.title || defaultTitle,
+            text: value.text || '',
+            imageDataUrl: value.imageDataUrl || '',
+            updatedAt: data?.updated_at || null,
+        };
+    }
+
+    const result = await pool.query(
+        'SELECT value, updated_at FROM app_settings WHERE key = $1 LIMIT 1',
+        ['student_instructions']
+    );
+    if (result.rows.length === 0) {
+        return { title: defaultTitle, text: '', imageDataUrl: '', updatedAt: null };
+    }
+    const value = result.rows[0].value || {};
+    return {
+        title: value.title || defaultTitle,
+        text: value.text || '',
+        imageDataUrl: value.imageDataUrl || '',
+        updatedAt: result.rows[0].updated_at || null,
+    };
+}
+
+async function setStudentInstructions(payload) {
+    const defaultTitle = 'تعليمات عامة قبل الاختبار';
+    const data = {
+        title: String(payload?.title || defaultTitle),
+        text: String(payload?.text || ''),
+        imageDataUrl: String(payload?.imageDataUrl || ''),
+    };
+
+    if (useSupabaseClient) {
+        const { error } = await supabase
+            .from('app_settings')
+            .upsert(
+                { key: 'student_instructions', value: data },
+                { onConflict: 'key' }
+            );
+        if (error) throw error;
+        return getStudentInstructions();
+    }
+
+    const result = await pool.query(
+        `INSERT INTO app_settings (key, value)
+         VALUES ($1, $2::jsonb)
+         ON CONFLICT (key)
+         DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+         RETURNING value, updated_at`,
+        ['student_instructions', JSON.stringify(data)]
+    );
+    const value = result.rows[0].value || {};
+    return {
+        title: value.title || defaultTitle,
+        text: value.text || '',
+        imageDataUrl: value.imageDataUrl || '',
+        updatedAt: result.rows[0].updated_at || null,
+    };
+}
+
 app.post('/api/auth/login', async (req, res) => {
     try {
         if (!isSupabaseConnected) {
@@ -541,6 +611,35 @@ app.delete('/api/users/:id', requireManager, async (req, res) => {
     }
 });
 
+app.get('/api/instructions', async (req, res) => {
+    try {
+        const instructions = await getStudentInstructions();
+        res.json(instructions);
+    } catch (err) {
+        console.error('Get instructions error:', err);
+        res.status(500).json({ error: 'فشل جلب التعليمات' });
+    }
+});
+
+app.put('/api/instructions', requireManager, async (req, res) => {
+    try {
+        const { title, text, imageDataUrl } = req.body || {};
+        const payload = {
+            title: String(title || 'تعليمات عامة قبل الاختبار'),
+            text: String(text || ''),
+            imageDataUrl: String(imageDataUrl || ''),
+        };
+        if (payload.imageDataUrl.length > 3 * 1024 * 1024) {
+            return res.status(400).json({ error: 'حجم الصورة كبير جدًا' });
+        }
+        const updated = await setStudentInstructions(payload);
+        res.json(updated);
+    } catch (err) {
+        console.error('Save instructions error:', err);
+        res.status(500).json({ error: 'فشل حفظ التعليمات' });
+    }
+});
+
 // Initialize Database Schema
 async function initDatabase() {
     if (useSupabaseClient) {
@@ -643,6 +742,14 @@ async function initDatabase() {
                 name TEXT NOT NULL,
                 created_by UUID,
                 created_at TIMESTAMP DEFAULT NOW()
+            )
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value JSONB NOT NULL DEFAULT '{}'::jsonb,
+                updated_at TIMESTAMP DEFAULT NOW()
             )
         `);
 

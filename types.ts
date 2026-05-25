@@ -108,3 +108,10 @@ export interface AuthLoginResponse {
   token: string;
   user: UserSession;
 }
+
+export interface StudentInstructions {
+  title: string;
+  text: string;
+  imageDataUrl: string;
+  updatedAt?: string;
+}

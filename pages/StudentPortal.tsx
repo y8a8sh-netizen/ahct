@@ -1,11 +1,12 @@
 
 
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Search, Calendar, Clock, MapPin, Printer } from 'lucide-react';
-import { Student, Exam, Committee, Room } from '../types';
+import { Student, Exam, Committee, Room, StudentInstructions } from '../types';
 import { formatScheduleDateHtml } from '../utils/helpers';
 import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
+import { fetchStudentInstructions } from '../services/api';
 
 interface StudentPortalProps {
   data: {
@@ -17,9 +18,19 @@ interface StudentPortalProps {
 }
 
 const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
+  const DEFAULT_INSTRUCTIONS_TITLE = 'تعليمات عامة قبل الاختبار';
   const [studentId, setStudentId] = useState('');
   const [schedule, setSchedule] = useState<any[] | null>(null);
   const [error, setError] = useState('');
+  const [instructions, setInstructions] = useState<StudentInstructions | null>(null);
+
+  useEffect(() => {
+    const loadInstructions = async () => {
+      const response = await fetchStudentInstructions();
+      if (response) setInstructions(response);
+    };
+    loadInstructions();
+  }, []);
 
   const handleSearch = () => {
     setError('');
@@ -169,6 +180,20 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
         </button>
         {error && <p className="text-red-500 font-medium">{error}</p>}
       </div>
+
+      {(instructions?.text || instructions?.imageDataUrl) && (
+        <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
+          <h3 className="text-lg font-bold text-tvtc-green mb-3">{instructions?.title || DEFAULT_INSTRUCTIONS_TITLE}</h3>
+          {instructions?.text && (
+            <p className="text-gray-700 whitespace-pre-wrap leading-7 mb-4">{instructions.text}</p>
+          )}
+          {instructions?.imageDataUrl && (
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+              <img src={instructions.imageDataUrl} alt="تعليمات الاختبارات" className="max-h-[420px] w-full object-contain rounded-md" />
+            </div>
+          )}
+        </div>
+      )}
 
       {schedule && (
         <div className="bg-white rounded-xl shadow-lg overflow-hidden animate-fade-in">
