@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react';
 import { Upload, AlertCircle, CheckCircle, Play, PieChart, Activity, Trash2, Edit, Plus, X, Save, Download, Printer, Grid, FileDown, UserCheck, Share2, Smartphone, FileCheck } from 'lucide-react';
 import { parseCSV, validateSchedule, getDualDate, parseAnyDate } from '../utils/helpers';
 import { getPortalUrl } from '../utils/routes';
-import { getAiAdvice } from '../services/geminiService';
 import { Student, Exam, Room, Proctor, Committee, Conflict } from '../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -40,6 +39,89 @@ interface UnassignedExamDetail {
   reason: string;
   students: UnassignedStudentDetail[];
 }
+
+const buildLocalAdvice = (state: {
+  students: Student[];
+  exams: Exam[];
+  rooms: Room[];
+  proctors: Proctor[];
+  committees: Committee[];
+}): string => {
+  const { students, exams, rooms, proctors } = state;
+
+  if (students.length === 0 && exams.length === 0) {
+    return 'لا توجد بيانات كافية للتحليل. يرجى رفع ملفات المتدربين والاختبارات للحصول على نصائح.';
+  }
+
+  const avgRoomCapacity = rooms.length > 0
+    ? Math.floor(rooms.reduce((sum, room) => sum + room.capacity, 0) / rooms.length)
+    : 30;
+
+  let estimatedCommittees = 0;
+  const timeSlots: Record<string, number> = {};
+  const blackboardSlots: Record<string, number> = {};
+
+  exams.forEach((exam) => {
+    const enrolled = students.filter((student) => student.courseCodes.includes(exam.courseCode)).length;
+    if (enrolled === 0) return;
+
+    const estimated = Math.ceil(enrolled / avgRoomCapacity);
+    estimatedCommittees += estimated;
+
+    const slotKey = `${exam.date} ${exam.time}`;
+    timeSlots[slotKey] = (timeSlots[slotKey] || 0) + estimated;
+    if (exam.type === 'Blackboard') {
+      blackboardSlots[slotKey] = (blackboardSlots[slotKey] || 0) + estimated;
+    }
+  });
+
+  const labs = rooms.filter((room) => room.type === 'Lab');
+  const halls = rooms.filter((room) => room.type === 'Hall');
+  const blackboardExams = exams.filter((exam) => exam.type === 'Blackboard');
+  const paperExams = exams.filter((exam) => exam.type === 'Paper');
+
+  const peakSlot = Object.entries(timeSlots).sort((a, b) => b[1] - a[1])[0];
+  const peakBlackboard = Object.entries(blackboardSlots).sort((a, b) => b[1] - a[1])[0];
+  const maxConcurrentCommittees = peakSlot ? peakSlot[1] : 0;
+  const maxConcurrentLabs = peakBlackboard ? peakBlackboard[1] : 0;
+
+  const proctorsNeededAtPeak = maxConcurrentCommittees * 2;
+
+  let advice = 'تقرير المحلل الذكي للنظام:\n\n';
+  advice += `📊 إجمالي المتدربين: ${students.length}\n`;
+  advice += `🧾 إجمالي المقررات المختبرة: ${exams.length}\n`;
+  advice += `🏛️ إجمالي القاعات: ${halls.length} | 🧪 إجمالي المعامل: ${labs.length}\n`;
+  advice += `👥 إجمالي المراقبين: ${proctors.length}\n\n`;
+
+  advice += '💻 تحليل اختبارات المعامل (Blackboard):\n';
+  advice += `- عدد اختبارات البلاك بورد: ${blackboardExams.length}\n`;
+  advice += `- أقصى احتياج معامل متزامن: ${maxConcurrentLabs}\n`;
+  if (labs.length < maxConcurrentLabs) {
+    advice += `- ⚠️ المعامل غير كافية وقت الذروة (${peakBlackboard?.[0] || 'غير محدد'}). المتوفر ${labs.length} والمطلوب ${maxConcurrentLabs}.\n\n`;
+  } else {
+    advice += `- ✅ المعامل كافية لتغطية أوقات الذروة.\n\n`;
+  }
+
+  advice += '📝 تحليل الاختبارات الورقية:\n';
+  advice += `- عدد الاختبارات الورقية: ${paperExams.length}\n`;
+  if (paperExams.length > 0 && halls.length === 0) {
+    advice += '- ⚠️ لا توجد قاعات Hall رغم وجود اختبارات ورقية.\n\n';
+  } else {
+    advice += '- ✅ نوع القاعات متوافق مبدئيًا مع الاختبارات الورقية.\n\n';
+  }
+
+  advice += '📌 تقديرات التشغيل:\n';
+  advice += `- اللجان المتوقعة تقريبيًا: ${estimatedCommittees}\n`;
+  advice += `- أقصى عدد لجان متزامنة: ${maxConcurrentCommittees}${peakSlot ? ` (وقت الذروة: ${peakSlot[0]})` : ''}\n`;
+  advice += `- المراقبون المطلوبون وقت الذروة: ${proctorsNeededAtPeak}\n`;
+  if (proctors.length < proctorsNeededAtPeak) {
+    advice += `- ⚠️ يوجد عجز مراقبين (${proctors.length}/${proctorsNeededAtPeak}).\n`;
+  } else {
+    advice += '- ✅ عدد المراقبين كافٍ مبدئيًا.\n';
+  }
+
+  return advice;
+};
 
 const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, currentUser, initialSection = 'upload' }) => {
   const isReadOnly = currentUser.readOnly;
@@ -717,7 +799,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
 
   const handleAiAdvice = async () => {
     setLoadingAi(true);
-    const advice = await getAiAdvice({ ...data, drafts: [] });
+    const advice = buildLocalAdvice(data);
     setAiAdvice(advice);
     setLoadingAi(false);
   };
