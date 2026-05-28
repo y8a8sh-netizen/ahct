@@ -157,42 +157,48 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
     <div className="max-w-4xl mx-auto space-y-8 px-4 sm:px-6 lg:px-8">
       <div className="text-center space-y-2">
         <h2 className="text-2xl sm:text-3xl font-bold text-tvtc-green">جدول الاختبارات النهائية</h2>
-        <p className="text-sm sm:text-base text-gray-600">أدخل الرقم التدريبي لاستعراض جدولك ومواقع الاختبار</p>
+        <p className="text-sm sm:text-base text-gray-600">
+          {schedule ? 'بإمكانك طباعة الجدول بالضغط على زر الطباعة' : 'أدخل الرقم التدريبي لاستعراض جدولك ومواقع الاختبار'}
+        </p>
       </div>
 
-      <div className="bg-white p-4 sm:p-8 rounded-xl shadow-md flex flex-col items-center gap-4 border-t-4 border-tvtc-gold">
-        <div className="w-full max-w-md relative">
-            <input 
-                type="text" 
-                placeholder="أدخل الرقم التدريبي هنا..." 
-                className="w-full p-3 sm:p-4 pr-10 sm:pr-12 text-base sm:text-lg border rounded-lg focus:ring-2 focus:ring-tvtc-green outline-none bg-white"
-                value={studentId}
-                onChange={(e) => setStudentId(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-            />
-            <Search className="absolute top-1/2 right-3 sm:right-4 -translate-y-1/2 text-gray-400" size={20} />
-        </div>
-        <button 
-            onClick={handleSearch}
-            className="bg-tvtc-green text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg text-base sm:text-lg font-bold hover:bg-green-800 transition-colors w-full max-w-md"
-        >
-            بحث
-        </button>
-        {error && <p className="text-red-500 font-medium">{error}</p>}
-      </div>
+      {schedule === null && (
+        <>
+          <div className="bg-white p-4 sm:p-8 rounded-xl shadow-md flex flex-col items-center gap-4 border-t-4 border-tvtc-gold">
+            <div className="w-full max-w-md relative">
+                <input 
+                    type="text" 
+                    placeholder="أدخل الرقم التدريبي هنا..." 
+                    className="w-full p-3 sm:p-4 pr-10 sm:pr-12 text-base sm:text-lg border rounded-lg focus:ring-2 focus:ring-tvtc-green outline-none bg-white"
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                />
+                <Search className="absolute top-1/2 right-3 sm:right-4 -translate-y-1/2 text-gray-400" size={20} />
+            </div>
+            <button 
+                onClick={handleSearch}
+                className="bg-tvtc-green text-white px-6 sm:px-8 py-2.5 sm:py-3 rounded-lg text-base sm:text-lg font-bold hover:bg-green-800 transition-colors w-full max-w-md"
+            >
+                بحث
+            </button>
+            {error && <p className="text-red-500 font-medium">{error}</p>}
+          </div>
 
-      {(instructions?.text || instructions?.imageDataUrl) && (
-        <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="text-lg font-bold text-tvtc-green mb-3">{instructions?.title || DEFAULT_INSTRUCTIONS_TITLE}</h3>
-          {instructions?.text && (
-            <p className="text-gray-700 whitespace-pre-wrap leading-7 mb-4">{instructions.text}</p>
-          )}
-          {instructions?.imageDataUrl && (
-            <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
-              <img src={instructions.imageDataUrl} alt="تعليمات الاختبارات" className="max-h-[420px] w-full object-contain rounded-md" />
+          {(instructions?.text || instructions?.imageDataUrl) && (
+            <div className="bg-white p-4 sm:p-6 rounded-xl shadow-sm border border-gray-100">
+              <h3 className="text-lg font-bold text-tvtc-green mb-3">{instructions?.title || DEFAULT_INSTRUCTIONS_TITLE}</h3>
+              {instructions?.text && (
+                <p className="text-gray-700 whitespace-pre-wrap leading-7 mb-4">{instructions.text}</p>
+              )}
+              {instructions?.imageDataUrl && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-2">
+                  <img src={instructions.imageDataUrl} alt="تعليمات الاختبارات" className="max-h-[420px] w-full object-contain rounded-md" />
+                </div>
+              )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {schedule && (
@@ -212,6 +218,15 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
                     className="bg-tvtc-gold text-white px-4 py-2.5 rounded-lg flex items-center gap-2 hover:bg-yellow-600 text-sm font-bold shadow-lg w-full sm:w-auto justify-center transition-all hover:scale-105"
                 >
                     <Printer size={18}/> طباعة الجدول
+                </button>
+                <button
+                    onClick={() => {
+                      setSchedule(null);
+                      setError('');
+                    }}
+                    className="bg-white text-gray-700 px-4 py-2.5 rounded-lg border border-gray-200 text-sm font-bold w-full sm:w-auto hover:bg-gray-100 transition-colors"
+                >
+                    بحث جديد
                 </button>
             </div>
             
