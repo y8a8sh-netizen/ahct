@@ -37,7 +37,7 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
     const student = data.students.find(s => s.id === studentId);
     
     if (!student) {
-      setError('رقم المتدرب غير موجود في النظام');
+      setError('تأكد من وضع الاتصال وحاول مره اخرى');
       setSchedule(null);
       return;
     }
