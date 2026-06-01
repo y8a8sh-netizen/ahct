@@ -1271,8 +1271,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                     content += `<div class="comm-grid">`;
                     examCommittees.forEach(comm => {
                         const room = data.rooms.find(r => r.id === comm.roomId);
-                        const p1 = data.proctors.find(p => p.id === comm.proctorIds[0])?.name.split(' ').slice(0, 2).join(' ') || '-';
-                        const p2 = data.proctors.find(p => p.id === comm.proctorIds[1])?.name.split(' ').slice(0, 2).join(' ') || '-';
+                        const p1 = data.proctors.find(p => p.id === comm.proctorIds[0])?.name || '-';
+                        const p2 = data.proctors.find(p => p.id === comm.proctorIds[1])?.name || '-';
                         
                         content += `
                             <div class="committee-box">
@@ -1281,8 +1281,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                                     <span class="room-badge">${room?.name || '---'}</span>
                                 </div>
                                 <div class="proctors-list">
-                                    <div>1. ${p1}</div>
-                                    <div>2. ${p2}</div>
+                                    <div class="proctor-name">1. ${p1}</div>
+                                    <div class="proctor-name">2. ${p2}</div>
                                 </div>
                                 <div class="student-count">${comm.studentIds.length} متدرب</div>
                             </div>
@@ -1335,6 +1335,7 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
           .comm-id { background: #333; color: #fff; padding: 0 3px; border-radius: 2px; font-weight: bold; }
           .room-badge { font-weight: bold; color: #059669; }
           .proctors-list { color: #444; margin-bottom: 2px; line-height: 1.1; }
+          .proctor-name { font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .student-count { text-align: center; background: #fef3c7; color: #92400e; border-radius: 2px; padding: 1px; font-weight: bold; font-size: 9px; }
           .empty-slot { color: #ddd; display: block; text-align: center; padding: 20px; font-size: 20px; }
         </style>
