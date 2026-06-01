@@ -142,6 +142,12 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
   const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
   const [currentRoom, setCurrentRoom] = useState<Partial<Room>>({ name: '', type: 'Hall', capacity: 30 });
   const [isEditingRoom, setIsEditingRoom] = useState(false);
+  
+  // Proctor Management State
+  const [isProctorModalOpen, setIsProctorModalOpen] = useState(false);
+  const [currentProctor, setCurrentProctor] = useState<Partial<Proctor>>({ id: '', name: '', department: '' });
+  const [isEditingProctor, setIsEditingProctor] = useState(false);
+  const [originalProctorId, setOriginalProctorId] = useState('');
 
   // Committee Management State
   const [isCommitteeModalOpen, setIsCommitteeModalOpen] = useState(false);
@@ -585,6 +591,91 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
       }));
     }
     setIsRoomModalOpen(false);
+  };
+
+  const openAddProctorModal = () => {
+    setCurrentProctor({ id: '', name: '', department: '' });
+    setIsEditingProctor(false);
+    setOriginalProctorId('');
+    setIsProctorModalOpen(true);
+  };
+
+  const openEditProctorModal = (proctor: Proctor) => {
+    setCurrentProctor({
+      id: proctor.id,
+      name: proctor.name,
+      department: proctor.department || '',
+    });
+    setIsEditingProctor(true);
+    setOriginalProctorId(proctor.id);
+    setIsProctorModalOpen(true);
+  };
+
+  const handleDeleteProctor = (id: string) => {
+    const assignedCount = data.committees.filter((c) => c.proctorIds.includes(id)).length;
+    if (assignedCount > 0) {
+      alert(`لا يمكن حذف هذا المراقب لأنه مُسند في ${assignedCount} لجنة. يمكنك تعديل بياناته بدلاً من الحذف.`);
+      return;
+    }
+    if (window.confirm('هل أنت متأكد من حذف هذا المراقب؟')) {
+      setData((prev: any) => ({
+        ...prev,
+        proctors: prev.proctors.filter((p: Proctor) => p.id !== id),
+      }));
+    }
+  };
+
+  const handleSaveProctor = () => {
+    const trimmedId = String(currentProctor.id || '').trim();
+    const trimmedName = String(currentProctor.name || '').trim();
+    const trimmedDepartment = String(currentProctor.department || '').trim();
+
+    if (!trimmedId || !trimmedName) {
+      alert('الرجاء تعبئة الرقم الوظيفي واسم المراقب');
+      return;
+    }
+
+    const idTaken = data.proctors.some((p) => p.id === trimmedId && (!isEditingProctor || p.id !== originalProctorId));
+    if (idTaken) {
+      alert('الرقم الوظيفي مستخدم مسبقاً، الرجاء اختيار رقم مختلف');
+      return;
+    }
+
+    if (isEditingProctor) {
+      setData((prev: any) => {
+        const updatedProctors = prev.proctors.map((p: Proctor) =>
+          p.id === originalProctorId
+            ? { ...p, id: trimmedId, name: trimmedName, department: trimmedDepartment || 'عام' }
+            : p
+        );
+
+        // إذا تغيّر الرقم الوظيفي، نحدّث كل اللجان المرتبطة تلقائياً بدون إعادة توزيع
+        const updatedCommittees = originalProctorId !== trimmedId
+          ? prev.committees.map((c: Committee) => ({
+              ...c,
+              proctorIds: (c.proctorIds || []).map((pid) => (pid === originalProctorId ? trimmedId : pid)),
+            }))
+          : prev.committees;
+
+        return {
+          ...prev,
+          proctors: updatedProctors,
+          committees: updatedCommittees,
+        };
+      });
+    } else {
+      const newProctor: Proctor = {
+        id: trimmedId,
+        name: trimmedName,
+        department: trimmedDepartment || 'عام',
+      };
+      setData((prev: any) => ({
+        ...prev,
+        proctors: [...prev.proctors, newProctor],
+      }));
+    }
+
+    setIsProctorModalOpen(false);
   };
 
   const openEditCommitteeModal = (committee: Committee) => {
@@ -1912,9 +2003,44 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                                 <button onClick={() => handleDownloadTemplate('proctors')} className="text-xs text-blue-600 flex items-center gap-1 hover:text-blue-800 transition-colors">
                                     <FileDown size={14}/> نموذج
                                 </button>
+                                <button 
+                                    onClick={openAddProctorModal}
+                                    disabled={isReadOnly}
+                                    title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''}
+                                    className="text-xs bg-tvtc-green text-white px-2 py-1 rounded flex items-center gap-1 hover:bg-green-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    <Plus size={12}/> إضافة يدوي
+                                </button>
                               </div>
                           </div>
                           <input type="file" accept=".csv" onChange={(e) => handleFileUpload(e, 'proctors')} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-tvtc-green/10 file:text-tvtc-green hover:file:bg-tvtc-green/20 disabled:opacity-50 disabled:cursor-not-allowed"/>
+                          {data.proctors.length > 0 && (
+                            <div className="bg-gray-50 rounded border border-gray-200 max-h-48 overflow-y-auto text-sm mt-2">
+                              <table className="w-full text-right">
+                                <thead className="bg-gray-100 sticky top-0">
+                                  <tr>
+                                    <th className="p-2 text-xs">الرقم الوظيفي</th>
+                                    <th className="p-2 text-xs">الاسم</th>
+                                    <th className="p-2 text-xs">القسم</th>
+                                    <th className="p-2 text-xs w-16">تحكم</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {data.proctors.map((proctor) => (
+                                    <tr key={proctor.id} className="border-t border-gray-200 hover:bg-white">
+                                      <td className="p-2 font-mono text-xs">{proctor.id}</td>
+                                      <td className="p-2">{proctor.name}</td>
+                                      <td className="p-2 text-xs">{proctor.department || 'عام'}</td>
+                                      <td className="p-2 flex gap-1 justify-end">
+                                        <button onClick={() => openEditProctorModal(proctor)} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="text-blue-600 hover:text-blue-800 p-1 disabled:opacity-30 disabled:cursor-not-allowed"><Edit size={14}/></button>
+                                        <button onClick={() => handleDeleteProctor(proctor.id)} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="text-red-600 hover:text-red-800 p-1 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={14}/></button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                       </div>
                   </div>
               </div>
@@ -2734,6 +2860,60 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                     
                     <button 
                         onClick={handleSaveRoom}
+                        className="w-full bg-tvtc-green text-white py-2 rounded font-bold hover:bg-green-800 flex justify-center items-center gap-2 mt-4"
+                    >
+                        <Save size={18} /> حفظ
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Proctor Modal */}
+      {isProctorModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-xl font-bold">{isEditingProctor ? 'تعديل مراقب' : 'إضافة مراقب جديد'}</h3>
+                    <button onClick={() => setIsProctorModalOpen(false)} className="text-gray-500 hover:text-gray-700">
+                        <X size={24} />
+                    </button>
+                </div>
+                
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium mb-1">الرقم الوظيفي</label>
+                        <input
+                            type="text"
+                            value={currentProctor.id || ''}
+                            onChange={(e) => setCurrentProctor({ ...currentProctor, id: e.target.value })}
+                            className="w-full border rounded p-2 focus:ring-2 focus:ring-tvtc-green outline-none bg-white"
+                            placeholder="مثال: P001"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">اسم المراقب</label>
+                        <input
+                            type="text"
+                            value={currentProctor.name || ''}
+                            onChange={(e) => setCurrentProctor({ ...currentProctor, name: e.target.value })}
+                            className="w-full border rounded p-2 focus:ring-2 focus:ring-tvtc-green outline-none bg-white"
+                            placeholder="مثال: أحمد محمد"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium mb-1">القسم</label>
+                        <input
+                            type="text"
+                            value={currentProctor.department || ''}
+                            onChange={(e) => setCurrentProctor({ ...currentProctor, department: e.target.value })}
+                            className="w-full border rounded p-2 focus:ring-2 focus:ring-tvtc-green outline-none bg-white"
+                            placeholder="مثال: نظم المعلومات"
+                        />
+                    </div>
+                    
+                    <button
+                        onClick={handleSaveProctor}
                         className="w-full bg-tvtc-green text-white py-2 rounded font-bold hover:bg-green-800 flex justify-center items-center gap-2 mt-4"
                     >
                         <Save size={18} /> حفظ
