@@ -2026,17 +2026,34 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {data.proctors.map((proctor) => (
-                                    <tr key={proctor.id} className="border-t border-gray-200 hover:bg-white">
-                                      <td className="p-2 font-mono text-xs">{proctor.id}</td>
-                                      <td className="p-2">{proctor.name}</td>
-                                      <td className="p-2 text-xs">{proctor.department || 'عام'}</td>
-                                      <td className="p-2 flex gap-1 justify-end">
-                                        <button onClick={() => openEditProctorModal(proctor)} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="text-blue-600 hover:text-blue-800 p-1 disabled:opacity-30 disabled:cursor-not-allowed"><Edit size={14}/></button>
-                                        <button onClick={() => handleDeleteProctor(proctor.id)} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="text-red-600 hover:text-red-800 p-1 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={14}/></button>
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {data.proctors.map((proctor) => {
+                                    const assignedCount = data.committees.filter((c) => c.proctorIds.includes(proctor.id)).length;
+                                    const deleteDisabled = isReadOnly || assignedCount > 0;
+                                    const deleteTitle = isReadOnly
+                                      ? 'الصلاحيات: قراءة فقط'
+                                      : assignedCount > 0
+                                        ? `لا يمكن الحذف: هذا المراقب مُسند إلى ${assignedCount} لجنة`
+                                        : 'حذف المراقب';
+
+                                    return (
+                                      <tr key={proctor.id} className="border-t border-gray-200 hover:bg-white">
+                                        <td className="p-2 font-mono text-xs">{proctor.id}</td>
+                                        <td className="p-2">{proctor.name}</td>
+                                        <td className="p-2 text-xs">{proctor.department || 'عام'}</td>
+                                        <td className="p-2 flex gap-1 justify-end">
+                                          <button onClick={() => openEditProctorModal(proctor)} disabled={isReadOnly} title={isReadOnly ? 'الصلاحيات: قراءة فقط' : ''} className="text-blue-600 hover:text-blue-800 p-1 disabled:opacity-30 disabled:cursor-not-allowed"><Edit size={14}/></button>
+                                          <button
+                                            onClick={() => handleDeleteProctor(proctor.id)}
+                                            disabled={deleteDisabled}
+                                            title={deleteTitle}
+                                            className={`p-1 ${deleteDisabled ? 'text-red-300 cursor-not-allowed' : 'text-red-600 hover:text-red-800'} disabled:opacity-100`}
+                                          >
+                                            <Trash2 size={14}/>
+                                          </button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
                                 </tbody>
                               </table>
                             </div>
