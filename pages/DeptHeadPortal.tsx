@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Printer, Filter, Calendar, Layers, Users, BarChart3, Clock, MapPin, UserCheck, TrendingUp, FileText, Search } from 'lucide-react';
+import { Printer, Filter, Calendar, Layers, Users, Clock, MapPin, UserCheck, TrendingUp, FileText, Search, Grid } from 'lucide-react';
 import { Committee, Exam, Room, Student, Proctor } from '../types';
 import PrintProctorSchedules from './PrintProctorSchedules';
 import { parseAnyDate, formatScheduleDateHtml } from '../utils/helpers';
@@ -15,7 +15,7 @@ interface DeptHeadPortalProps {
 }
 
 const DeptHeadPortal: React.FC<DeptHeadPortalProps> = ({ data }) => {
-  const [activeTab, setActiveTab] = useState<'committees' | 'print' | 'proctors'>('committees');
+  const [activeTab, setActiveTab] = useState<'committees' | 'print' | 'proctors' | 'matrix'>('committees');
   const [selectedDept, setSelectedDept] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState('');
@@ -139,6 +139,163 @@ const DeptHeadPortal: React.FC<DeptHeadPortalProps> = ({ data }) => {
 
     return sortedGroups;
   }, [filteredCommittees, data.exams]);
+
+  const getMatrixData = () => {
+    const uniqueDates = [...new Set(data.exams.map(e => e.date))].filter(Boolean);
+    const dates = uniqueDates.sort((a, b) => {
+      const dateA = parseAnyDate(a);
+      const dateB = parseAnyDate(b);
+      if (dateA && dateB) return dateA.getTime() - dateB.getTime();
+      return String(a).localeCompare(String(b));
+    });
+
+    const getTimeValue = (timeStr: string) => {
+      const start = String(timeStr || '').split('-')[0].trim();
+      const [h, m] = start.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+    const uniqueTimes = [...new Set(data.exams.map(e => e.time))].filter(Boolean);
+    const times = uniqueTimes.sort((a, b) => getTimeValue(String(a)) - getTimeValue(String(b)));
+
+    return { dates, times };
+  };
+
+  const handlePrintMatrix = () => {
+    const { dates, times } = getMatrixData();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    let rowsHtml = '';
+    dates.forEach(date => {
+      const dateObj = parseAnyDate(date as string);
+      const dayName = dateObj
+        ? dateObj.toLocaleDateString('ar-SA', { weekday: 'long' })
+        : 'غير محدد';
+
+      let colsHtml = `<td class="header-col">
+        <div class="date-cell">
+          <span class="day-name">${dayName}</span>
+          <span class="date-greg">${date}</span>
+        </div>
+      </td>`;
+
+      times.forEach(time => {
+        const slotExams = data.exams.filter(e => e.date === date && e.time === time);
+        let content = '';
+
+        if (slotExams.length > 0) {
+          slotExams.forEach(exam => {
+            const examCommittees = data.committees.filter(c => {
+              if (c.examCode !== exam.courseCode) return false;
+              if (exam.specialization !== 'جميع التخصصات' && exam.specialization !== 'عام') {
+                return c.specialization === exam.specialization;
+              }
+              return true;
+            });
+
+            if (examCommittees.length === 0) return;
+
+            content += `<div class="exam-group">`;
+            content += `<div class="exam-header">
+              <span class="exam-name">${exam.courseName}</span>
+              <span class="exam-spec">${exam.specialization !== 'عام' ? exam.specialization : ''}</span>
+            </div>`;
+            content += `<div class="comm-grid">`;
+
+            examCommittees.forEach(comm => {
+              const room = data.rooms.find(r => r.id === comm.roomId);
+              const p1 = data.proctors.find(p => p.id === comm.proctorIds[0])?.name || '-';
+              const p2 = data.proctors.find(p => p.id === comm.proctorIds[1])?.name || '-';
+
+              content += `
+                <div class="committee-box">
+                  <div class="comm-top">
+                    <span class="comm-id">${comm.id}</span>
+                    <span class="room-badge">${room?.name || '---'}</span>
+                  </div>
+                  <div class="proctors-list">
+                    <div class="proctor-name">1. ${p1}</div>
+                    <div class="proctor-name">2. ${p2}</div>
+                  </div>
+                  <div class="student-count">${comm.studentIds.length} متدرب</div>
+                </div>
+              `;
+            });
+
+            content += `</div></div>`;
+          });
+        } else {
+          content = '<span class="empty-slot">-</span>';
+        }
+
+        colsHtml += `<td class="data-col">${content}</td>`;
+      });
+
+      rowsHtml += `<tr>${colsHtml}</tr>`;
+    });
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html dir="rtl">
+      <head>
+        <title>الجدول الشبكي للاختبارات</title>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+        <style>
+          @page { size: A3 landscape; margin: 5mm; }
+          * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+          body { font-family: 'Tajawal', sans-serif; margin: 0; padding: 10px; background: #fff; }
+          .report-header { text-align: center; border-bottom: 3px solid #006d5b; padding-bottom: 10px; margin-bottom: 15px; }
+          .report-header h1 { margin: 0; color: #006d5b; font-size: 24px; }
+          .report-header h2 { margin: 5px 0 0; color: #555; font-size: 16px; }
+          .print-date { font-size: 10px; color: #999; text-align: left; margin-top: 5px; }
+          table { width: 100%; border-collapse: collapse; border: 1px solid #000; table-layout: fixed; }
+          th, td { border: 1px solid #444; vertical-align: top; }
+          th { background-color: #f3f4f6; padding: 8px; text-align: center; font-weight: bold; font-size: 14px; border-bottom: 2px solid #000; }
+          .header-col { width: 110px; background-color: #f8fafc; text-align: center; vertical-align: middle; padding: 8px 5px; }
+          .date-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; }
+          .day-name { font-size: 16px; font-weight: 800; color: #000; margin-bottom: 6px; border-bottom: 2px solid #eee; padding-bottom: 4px; width: 100%; display: block; }
+          .date-greg { font-size: 11px; color: #666; display: block; margin-top: 4px; font-family: sans-serif; }
+          .data-col { padding: 4px; }
+          .exam-group { margin-bottom: 6px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; page-break-inside: avoid; }
+          .exam-header { background: #eef2ff; padding: 4px 6px; border-bottom: 1px solid #e0e7ff; display: flex; justify-content: space-between; align-items: center; }
+          .exam-name { font-weight: bold; font-size: 12px; color: #1e3a8a; }
+          .exam-spec { font-size: 10px; color: #4338ca; background: #fff; border-radius: 3px; padding: 0 4px; }
+          .comm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px; padding: 4px; background: #fff; }
+          .committee-box { border: 1px solid #ccc; border-radius: 3px; padding: 3px; background: #fdfdfd; font-size: 10px; }
+          .comm-top { display: flex; justify-content: space-between; margin-bottom: 2px; border-bottom: 1px dashed #eee; padding-bottom: 2px; }
+          .comm-id { background: #333; color: #fff; padding: 0 3px; border-radius: 2px; font-weight: bold; }
+          .room-badge { font-weight: bold; color: #059669; }
+          .proctors-list { color: #444; margin-bottom: 2px; line-height: 1.1; }
+          .proctor-name { font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .student-count { text-align: center; background: #fef3c7; color: #92400e; border-radius: 2px; padding: 1px; font-weight: bold; font-size: 9px; }
+          .empty-slot { color: #ddd; display: block; text-align: center; padding: 20px; font-size: 20px; }
+        </style>
+      </head>
+      <body>
+        <div class="report-header">
+          <h1>الكلية التقنية بأحد رفيدة</h1>
+          <h2>الجدول العام لتوزيع لجان الاختبارات النهائية</h2>
+          <div class="print-date">تم الطباعة بتاريخ: ${new Date().toLocaleDateString('en-GB')}</div>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 110px;">اليوم / التاريخ</th>
+              ${times.map(t => `<th>الفترة (${t})</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml}
+          </tbody>
+        </table>
+        <script>window.onload = function() { window.print(); }</script>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
 
   // دالة طباعة كشوف اللجان
   const handlePrintExamCommittees = (committees: Committee[]) => {
@@ -430,6 +587,17 @@ const DeptHeadPortal: React.FC<DeptHeadPortalProps> = ({ data }) => {
             <Users size={18} />
             جداول المراقبين
           </button>
+          <button
+            onClick={() => setActiveTab('matrix')}
+            className={`flex-1 px-6 py-4 font-semibold text-sm transition-all flex items-center justify-center gap-2 ${
+              activeTab === 'matrix'
+                ? 'bg-tvtc-green text-white border-b-2 border-tvtc-green'
+                : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <Grid size={18} />
+            الجدول الشبكي
+          </button>
         </div>
       </div>
 
@@ -469,6 +637,9 @@ const DeptHeadPortal: React.FC<DeptHeadPortalProps> = ({ data }) => {
       )}
 
       {activeTab === 'proctors' && <PrintProctorSchedules data={data} />}
+      {activeTab === 'matrix' && (
+        <MatrixTab data={data} handlePrintMatrix={handlePrintMatrix} getMatrixData={getMatrixData} />
+      )}
     </div>
   );
 };
@@ -976,6 +1147,120 @@ const PrintTab: React.FC<PrintTabProps> = ({
             })}
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+interface MatrixTabProps {
+  data: DeptHeadPortalProps['data'];
+  handlePrintMatrix: () => void;
+  getMatrixData: () => { dates: string[]; times: string[] };
+}
+
+const MatrixTab: React.FC<MatrixTabProps> = ({ data, handlePrintMatrix, getMatrixData }) => {
+  const { dates, times } = getMatrixData();
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div className="flex justify-between items-center mb-6 border-b pb-4">
+          <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+            <Grid size={20} className="text-tvtc-green" /> الجدول الشبكي للاختبارات
+          </h3>
+          <button
+            onClick={handlePrintMatrix}
+            className="bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition-all flex items-center gap-2 font-semibold"
+          >
+            <Printer size={17} />
+            طباعة الجدول
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse border border-gray-900 text-center text-sm">
+            <thead>
+              <tr className="bg-gray-100 text-gray-900">
+                <th className="border border-gray-900 p-2 w-28 font-bold">التاريخ / اليوم</th>
+                {times.map((time, idx) => (
+                  <th key={idx} className="border border-gray-900 p-2 font-bold min-w-[200px]">{time}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {dates.map((date, rowIdx) => {
+                const dateObj = parseAnyDate(String(date));
+                const dayName = dateObj
+                  ? dateObj.toLocaleDateString('ar-SA', { weekday: 'long' })
+                  : 'غير محدد';
+
+                return (
+                  <tr key={rowIdx}>
+                    <td className="border border-gray-900 p-2 font-bold bg-gray-50 align-middle">
+                      <div className="text-sm">{dayName}</div>
+                      <div className="text-xs text-gray-700">{date}</div>
+                    </td>
+                    {times.map((time, colIdx) => {
+                      const slotExams = data.exams.filter(e => e.date === date && e.time === time);
+                      return (
+                        <td key={colIdx} className="border border-gray-900 p-1 align-top h-32">
+                          {slotExams.length > 0 ? (
+                            <div className="flex flex-col gap-2 h-full">
+                              {slotExams.map((exam, exIdx) => {
+                                const examCommittees = data.committees.filter(c => {
+                                  if (c.examCode !== exam.courseCode) return false;
+                                  if (exam.specialization !== 'جميع التخصصات' && exam.specialization !== 'عام') {
+                                    return c.specialization === exam.specialization;
+                                  }
+                                  return true;
+                                });
+                                if (examCommittees.length === 0) return null;
+
+                                return (
+                                  <div key={exIdx} className="bg-white border border-gray-300 p-1 rounded text-right h-full shadow-sm">
+                                    <div className="font-bold text-center text-sm bg-gray-100 p-1 border-b mb-1">
+                                      {exam.courseName}
+                                      <br />
+                                      <span className="text-[10px] text-gray-500 font-normal">({exam.specialization})</span>
+                                    </div>
+                                    <div className="space-y-1">
+                                      {examCommittees.map((comm) => {
+                                        const room = data.rooms.find(r => r.id === comm.roomId);
+                                        const p1 = data.proctors.find(p => p.id === comm.proctorIds[0]);
+                                        const p2 = data.proctors.find(p => p.id === comm.proctorIds[1]);
+                                        return (
+                                          <div key={comm.id} className="text-[10px] border border-gray-200 p-1 rounded bg-gray-50">
+                                            <div className="flex justify-between items-center font-bold mb-1 border-b border-gray-200 pb-1">
+                                              <div className="flex items-center gap-1">
+                                                <span className="bg-black text-white px-1 rounded">{comm.id}</span>
+                                                <span className="bg-tvtc-gold text-white px-1.5 rounded text-[10px]">{comm.studentIds.length} متدرب</span>
+                                              </div>
+                                              <span>{room?.name || '---'}</span>
+                                            </div>
+                                            <div className="text-gray-700 leading-tight">
+                                              <div className="truncate">1. {p1?.name || '-'}</div>
+                                              <div className="truncate">2. {p2?.name || '-'}</div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

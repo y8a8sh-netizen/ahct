@@ -1228,11 +1228,8 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
     setIsDeleteStudentModalOpen(true);
   };
 
-  const handlePrintMatrix = () => {
+  const buildMatrixRowsHtml = () => {
     const { dates, times } = getMatrixData();
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
     let rowsHtml = '';
     dates.forEach(date => {
         const dual = getDualDate(date as string);
@@ -1298,13 +1295,10 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
         rowsHtml += `<tr>${colsHtml}</tr>`;
     });
 
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html dir="rtl">
-      <head>
-        <title>الجدول الشبكي للاختبارات</title>
-        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
-        <style>
+    return { rowsHtml, times };
+  };
+
+  const getMatrixPrintStyles = () => `
           @page { size: A3 landscape; margin: 5mm; }
           * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
           body { font-family: 'Tajawal', sans-serif; margin: 0; padding: 10px; background: #fff; }
@@ -1338,9 +1332,9 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
           .proctor-name { font-size: 8.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .student-count { text-align: center; background: #fef3c7; color: #92400e; border-radius: 2px; padding: 1px; font-weight: bold; font-size: 9px; }
           .empty-slot { color: #ddd; display: block; text-align: center; padding: 20px; font-size: 20px; }
-        </style>
-      </head>
-      <body>
+  `;
+
+  const getMatrixContentHtml = (rowsHtml: string, times: string[]) => `
         <div class="report-header">
             <h1>الكلية التقنية بأحد رفيدة</h1>
             <h2>الجدول العام لتوزيع لجان الاختبارات النهائية</h2>
@@ -1357,6 +1351,25 @@ const ManagerDashboard: React.FC<ManagerDashboardProps> = ({ data, setData, curr
             ${rowsHtml}
           </tbody>
         </table>
+  `;
+
+  const handlePrintMatrix = () => {
+    const { rowsHtml, times } = buildMatrixRowsHtml();
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html dir="rtl">
+      <head>
+        <title>الجدول الشبكي للاختبارات</title>
+        <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
+        <style>
+          ${getMatrixPrintStyles()}
+        </style>
+      </head>
+      <body>
+        ${getMatrixContentHtml(rowsHtml, times)}
         <script>window.onload = function() { window.print(); }</script>
       </body>
       </html>
