@@ -32,9 +32,68 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
     loadInstructions();
   }, []);
 
+  const buildStudentSchedule = (student: Student, id: string) => {
+    const fromCommittees = data.committees
+      .filter((comm) => comm.studentIds.includes(id))
+      .map((comm) => {
+        let exam = data.exams.find(
+          (e) => e.courseCode === comm.examCode && e.specialization === comm.specialization
+        );
+        if (!exam) exam = data.exams.find((e) => e.courseCode === comm.examCode);
+        const room = data.rooms.find((r) => r.id === comm.roomId);
+        return {
+          ...exam,
+          roomName: room?.name,
+          roomType: room?.type,
+        };
+      })
+      .filter((item) => item.courseCode);
+
+    const coveredCodes = new Set(fromCommittees.map((item) => item.courseCode));
+    const fromCourses = (student.courseCodes || [])
+      .filter((code) => !coveredCodes.has(code))
+      .map((courseCode) => {
+        let exam = data.exams.find(
+          (e) =>
+            e.courseCode === courseCode &&
+            (e.specialization === student.specialization || !student.specialization)
+        );
+        if (!exam) exam = data.exams.find((e) => e.courseCode === courseCode);
+        if (!exam) return null;
+        return {
+          ...exam,
+          roomName: 'يُحدّد لاحقاً',
+          roomType: undefined,
+        };
+      })
+      .filter(Boolean) as typeof fromCommittees;
+
+    return [...fromCommittees, ...fromCourses].sort((a, b) => {
+      if (!a.date || !b.date) return 0;
+      return new Date(a.date).getTime() - new Date(b.date).getTime();
+    });
+  };
+
+  useEffect(() => {
+    if (schedule === null) return;
+    const trimmedId = studentId.trim();
+    if (!trimmedId) return;
+    const student = data.students.find((s) => s.id === trimmedId);
+    if (student) {
+      setSchedule(buildStudentSchedule(student, trimmedId));
+    }
+  }, [data]);
+
   const handleSearch = () => {
     setError('');
-    const student = data.students.find(s => s.id === studentId);
+    const trimmedId = studentId.trim();
+    if (!trimmedId) {
+      setError('أدخل الرقم التدريبي');
+      setSchedule(null);
+      return;
+    }
+
+    const student = data.students.find((s) => s.id === trimmedId);
     
     if (!student) {
       setError('تأكد من وضع الاتصال وحاول مره اخرى');
@@ -42,28 +101,8 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
       return;
     }
 
-    // Find exams for this student based on committees assigned
-    const studentSchedule = data.committees
-        .filter(comm => comm.studentIds.includes(studentId))
-        .map(comm => {
-            // UPDATED: Lookup exam using specialization for accurate Date/Time
-            let exam = data.exams.find(e => e.courseCode === comm.examCode && e.specialization === comm.specialization);
-            if (!exam) exam = data.exams.find(e => e.courseCode === comm.examCode);
-
-            const room = data.rooms.find(r => r.id === comm.roomId);
-            return {
-                ...exam,
-                roomName: room?.name,
-                roomType: room?.type
-            };
-        })
-        .sort((a, b) => {
-             // Sort by date/time
-             if (!a.date || !b.date) return 0;
-             return new Date(a.date).getTime() - new Date(b.date).getTime();
-        });
-
-    setSchedule(studentSchedule);
+    setStudentId(trimmedId);
+    setSchedule(buildStudentSchedule(student, trimmedId));
   };
 
   const handlePrint = () => {
