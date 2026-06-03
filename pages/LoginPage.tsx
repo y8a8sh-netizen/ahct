@@ -1,4 +1,4 @@
-
+import { Analytics } from '@vercel/analytics/react';
 import React, { useState, useEffect } from 'react';
 import { Lock, User, ShieldCheck, Users, UserCheck, BookOpen, ArrowRight, Key, LayoutGrid } from 'lucide-react';
 import { Student, Proctor, UserSession, UserRole } from '../types';
@@ -272,6 +272,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ data, onLogin }) => {
             نظام اللجان والاختبارات v2.7 &copy; 2024 الكلية التقنية بأحد رفيدة
         </div>
       </div>
+      <Analytics />
     </div>
   );
 };
