@@ -40,11 +40,7 @@ let dbConnectionMode = 'none';
 let supabase = null;
 
 // Middleware
-app.use(cors({
-    origin: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(createGeoMiddleware());
 
@@ -1086,34 +1082,10 @@ app.get('/api/portal/proctor-schedule', async (req, res) => {
     }
 });
 
-function countStateRecords(state) {
-    return (
-        (state?.students?.length || 0) +
-        (state?.exams?.length || 0) +
-        (state?.rooms?.length || 0) +
-        (state?.proctors?.length || 0) +
-        (state?.committees?.length || 0)
-    );
-}
-
 // 2. POST Full State (Sync) — manager only
 app.post('/api/sync', requireManager, async (req, res) => {
     const data = req.body;
     console.log(`[${new Date().toLocaleTimeString()}] 📥 Received sync request (Committees: ${data.committees?.length || 0})`);
-
-    try {
-        const incomingCount = countStateRecords(data);
-        if (incomingCount === 0) {
-            const existing = await buildFullState();
-            if (countStateRecords(existing) > 0) {
-                return res.status(400).json({
-                    error: 'رفض مزامنة حالة فارغة فوق بيانات موجودة في قاعدة البيانات',
-                });
-            }
-        }
-    } catch (guardErr) {
-        console.warn('Sync guard check skipped:', guardErr.message);
-    }
 
     if (useSupabaseClient) {
         try {

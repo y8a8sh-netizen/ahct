@@ -1,6 +1,8 @@
 
 import { AuthLoginResponse, StudentInstructions, SystemState, SystemUser, UserRole, UserSession } from '../types';
 import { clearAuthToken, getAuthHeaders, setAuthToken } from '../utils/auth';
+
+// تحديد رابط السيرفر ديناميكياً بناءً على رابط المتصفح
 // هذا يسمح بالعمل سواء كنت على localhost أو عبر الشبكة (IP Address)
 const getApiUrl = () => {
     const configuredUrl = import.meta.env.VITE_API_BASE_URL || '';
@@ -20,11 +22,7 @@ export const fetchSystemState = async (): Promise<SystemState | null> => {
     try {
         const url = `${getApiUrl()}/state`;
         const response = await fetch(url, { headers: getAuthHeaders() });
-        if (response.status === 401) {
-            clearAuthToken();
-            return null;
-        }
-        if (response.status === 403) return null;
+        if (response.status === 401 || response.status === 403) return null;
         if (!response.ok) throw new Error('Network response was not ok');
         return await response.json();
     } catch (error) {

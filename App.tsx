@@ -48,22 +48,16 @@ const App: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [portalResetKey, setPortalResetKey] = useState(0);
-  const [hasServerSnapshot, setHasServerSnapshot] = useState(false);
-  const [loadError, setLoadError] = useState('');
 
   const loadFullState = useCallback(async () => {
       const serverData = await fetchSystemState();
       if (serverData) {
           setIsServerConnected(true);
           setData(serverData);
-          setHasServerSnapshot(true);
-          setLoadError('');
           console.log('✅ Loaded data from server (PostgreSQL database)');
           return true;
       }
       setIsServerConnected(false);
-      setHasServerSnapshot(false);
-      setLoadError('تعذر جلب البيانات. أعد تسجيل الدخول أو تحقق من الاتصال بالخادم.');
       return false;
   }, []);
 
@@ -122,7 +116,7 @@ const App: React.FC = () => {
 
       // Only managers can write to localStorage and sync to server
       // Read-only users (students, proctors, dept heads) should NOT save or sync
-      if (currentUser && !currentUser.readOnly && hasServerSnapshot) {
+      if (currentUser && !currentUser.readOnly) {
           // Save locally as backup/cache (only for managers)
           localStorage.setItem('tvtc_exam_system', JSON.stringify(data));
 
@@ -138,10 +132,10 @@ const App: React.FC = () => {
               return () => clearTimeout(timeoutId);
           }
       }
-  }, [data, isServerConnected, isInitialized, currentUser, hasServerSnapshot]);
+  }, [data, isServerConnected, isInitialized, currentUser]);
 
   // Handle Login Logic
-  const handleLogin = useCallback(async (user: UserSession) => {
+  const handleLogin = useCallback((user: UserSession) => {
       setCurrentUser(user);
       
       // Clear localStorage for read-only users to prevent old data pollution
@@ -166,7 +160,7 @@ const App: React.FC = () => {
       }
 
       if (user.role === 'manager' || user.role === 'dept_head') {
-          await loadFullState();
+          loadFullState();
       }
   }, [loadFullState]);
 
@@ -243,17 +237,11 @@ const App: React.FC = () => {
              <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full border border-green-200 shadow-sm flex items-center gap-1">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> متصل بقاعدة البيانات
              </span>
-          ) : (
-             <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1">
-                <span className="w-2 h-2 bg-gray-400 rounded-full"></span> وضع غير متصل (محلي)
-             </span>
-          )}
-
-          {loadError && (currentUser?.role === 'manager' || currentUser?.role === 'dept_head') && (
-              <span className="bg-red-50 text-red-700 text-xs px-2 py-1 rounded-full border border-red-200 max-w-xs">
-                  {loadError}
-              </span>
-          )}
+          ) : (
+             <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1">
+                <span className="w-2 h-2 bg-gray-400 rounded-full"></span> وضع غير متصل (محلي)
+             </span>
+          )}
           
           {/* Auto-refresh indicator for read-only users */}
           {currentUser && currentUser.readOnly && currentUser.role === 'dept_head' && isServerConnected && (
