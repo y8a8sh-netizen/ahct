@@ -6,7 +6,7 @@ import { Search, Calendar, Clock, MapPin, Printer } from 'lucide-react';
 import { Student, Exam, Committee, Room, StudentInstructions } from '../types';
 import { formatScheduleDateHtml } from '../utils/helpers';
 import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
-import { fetchStudentInstructions, fetchStudentPortalSchedule } from '../services/api';
+import { fetchStudentInstructions } from '../services/api';
 
 interface StudentPortalProps {
   data: {
@@ -23,7 +23,6 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
   const [schedule, setSchedule] = useState<any[] | null>(null);
   const [error, setError] = useState('');
   const [instructions, setInstructions] = useState<StudentInstructions | null>(null);
-  const [searching, setSearching] = useState(false);
 
   useEffect(() => {
     const loadInstructions = async () => {
@@ -33,52 +32,38 @@ const StudentPortal: React.FC<StudentPortalProps> = ({ data }) => {
     loadInstructions();
   }, []);
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     setError('');
-    setSearching(true);
-
-    try {
-      if (data.students.length === 0) {
-        const result = await fetchStudentPortalSchedule(studentId);
-        if (!result) {
-          setError('تأكد من وضع الاتصال وحاول مره اخرى');
-          setSchedule(null);
-          return;
-        }
-        setSchedule(result.schedule);
-        return;
-      }
-
-      const student = data.students.find(s => s.id === studentId);
-      
-      if (!student) {
-        setError('تأكد من وضع الاتصال وحاول مره اخرى');
-        setSchedule(null);
-        return;
-      }
-
-      const studentSchedule = data.committees
-          .filter(comm => comm.studentIds.includes(studentId))
-          .map(comm => {
-              let exam = data.exams.find(e => e.courseCode === comm.examCode && e.specialization === comm.specialization);
-              if (!exam) exam = data.exams.find(e => e.courseCode === comm.examCode);
-
-              const room = data.rooms.find(r => r.id === comm.roomId);
-              return {
-                  ...exam,
-                  roomName: room?.name,
-                  roomType: room?.type
-              };
-          })
-          .sort((a, b) => {
-               if (!a.date || !b.date) return 0;
-               return new Date(a.date).getTime() - new Date(b.date).getTime();
-          });
-
-      setSchedule(studentSchedule);
-    } finally {
-      setSearching(false);
+    const student = data.students.find(s => s.id === studentId);
+    
+    if (!student) {
+      setError('تأكد من وضع الاتصال وحاول مره اخرى');
+      setSchedule(null);
+      return;
     }
+
+    // Find exams for this student based on committees assigned
+    const studentSchedule = data.committees
+        .filter(comm => comm.studentIds.includes(studentId))
+        .map(comm => {
+            // UPDATED: Lookup exam using specialization for accurate Date/Time
+            let exam = data.exams.find(e => e.courseCode === comm.examCode && e.specialization === comm.specialization);
+            if (!exam) exam = data.exams.find(e => e.courseCode === comm.examCode);
+
+            const room = data.rooms.find(r => r.id === comm.roomId);
+            return {
+                ...exam,
+                roomName: room?.name,
+                roomType: room?.type
+            };
+        })
+        .sort((a, b) => {
+             // Sort by date/time
+             if (!a.date || !b.date) return 0;
+             return new Date(a.date).getTime() - new Date(b.date).getTime();
+        });
+
+    setSchedule(studentSchedule);
   };
 
   const handlePrint = () => {

@@ -6,7 +6,6 @@ import { Search, Calendar, Clock, MapPin, Printer, UserCheck } from 'lucide-reac
 import { Student, Exam, Committee, Room, Proctor } from '../types';
 import { formatScheduleDateHtml } from '../utils/helpers';
 import ScheduleDateDisplay from '../components/ScheduleDateDisplay';
-import { fetchProctorPortalSchedule } from '../services/api';
 
 interface ProctorPortalProps {
   data: {
@@ -23,38 +22,24 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
   const [proctor, setProctor] = useState<Proctor | null>(null);
   const [schedule, setSchedule] = useState<any[] | null>(null);
   const [error, setError] = useState('');
-  const [searching, setSearching] = useState(false);
 
-  const handleSearch = async () => {
+  const handleSearch = () => {
     setError('');
-    setSearching(true);
+    const foundProctor = data.proctors.find(p => p.id === searchId || p.name.includes(searchId));
+    
+    if (!foundProctor) {
+      setError('لم يتم العثور على مراقب بهذا الرقم أو الاسم');
+      setSchedule(null);
+      setProctor(null);
+      return;
+    }
 
-    try {
-      if (data.proctors.length === 0) {
-        const result = await fetchProctorPortalSchedule(searchId);
-        if (!result) {
-          setError('لم يتم العثور على مراقب بهذا الرقم أو الاسم');
-          setSchedule(null);
-          setProctor(null);
-          return;
-        }
-        setProctor(result.proctor);
-        setSchedule(result.schedule);
-        return;
-      }
+    setProctor(foundProctor);
 
-      const foundProctor = data.proctors.find(p => p.id === searchId || p.name.includes(searchId));
-      
-      if (!foundProctor) {
-        setError('لم يتم العثور على مراقب بهذا الرقم أو الاسم');
-        setSchedule(null);
-        setProctor(null);
-        return;
-      }
-
-      setProctor(foundProctor);
-
+        // Find committees where this proctor is assigned
+        // ثم دمج اللجان المتداخلة (نفس القاعة ونفس الوقت)
         const proctorCommittees = data.committees.filter(comm => comm.proctorIds.includes(foundProctor.id));
+        // تجميع حسب (التاريخ+الوقت+القاعة)
         const merged: Record<string, any> = {};
         proctorCommittees.forEach(comm => {
             let exam = data.exams.find(e => e.courseCode === comm.examCode && e.specialization === comm.specialization);
@@ -81,6 +66,7 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
             merged[slotKey].committeeIds.push(comm.id);
             merged[slotKey].studentCount += comm.studentIds.length;
         });
+        // بناء الجدول النهائي
         const proctorSchedule = Object.values(merged).map((item: any) => ({
             date: item.date,
             time: item.time,
@@ -98,9 +84,6 @@ const ProctorPortal: React.FC<ProctorPortalProps> = ({ data }) => {
             return (a.time || '').localeCompare(b.time || '');
         });
         setSchedule(proctorSchedule);
-    } finally {
-      setSearching(false);
-    }
   };
 
   const handlePrint = () => {

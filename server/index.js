@@ -10,7 +10,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tvtc-college-scheduler-dev-secret-change-in-production';
-const { createGeoMiddleware } = require('./geo-restrict.cjs');
 
 // Render وغيره قد يفشلون مع IPv6 — نفضّل IPv4 دائماً
 if (typeof dns.setDefaultResultOrder === 'function') {
@@ -22,7 +21,6 @@ const DEFAULT_POOLER_HOST = 'aws-0-eu-west-1.pooler.supabase.com';
 const DEFAULT_POOLER_PORT = 6543;
 
 const app = express();
-app.set('trust proxy', true);
 const PORT = Number(process.env.PORT || 3001);
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -42,7 +40,6 @@ let supabase = null;
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(createGeoMiddleware());
 
 // PostgreSQL Database Setup - SUPABASE ONLY
 const parseSupabaseUrl = (connectionString) => {
@@ -273,24 +270,6 @@ const requireManager = (req, res, next) => {
         const payload = jwt.verify(token, JWT_SECRET);
         if (payload.role !== 'manager') {
             return res.status(403).json({ error: 'هذه العملية للمدير فقط' });
-        }
-        req.authUser = payload;
-        next();
-    } catch {
-        return res.status(401).json({ error: 'انتهت الجلسة، يرجى تسجيل الدخول مجدداً' });
-    }
-};
-
-const requireAuthenticatedRead = (req, res, next) => {
-    const header = req.headers.authorization || '';
-    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-    if (!token) {
-        return res.status(401).json({ error: 'غير مصرح: يلزم تسجيل الدخول' });
-    }
-    try {
-        const payload = jwt.verify(token, JWT_SECRET);
-        if (payload.role !== 'manager' && payload.role !== 'dept_head') {
-            return res.status(403).json({ error: 'غير مصرح للاطلاع على بيانات النظام' });
         }
         req.authUser = payload;
         next();
@@ -828,63 +807,42 @@ async function bulkInsert(table, rows) {
 
 // --- API ROUTES ---
 
-function findExamForCommittee(examsData, comm) {
-    let exam = examsData.find(
-        (e) => e.coursecode === comm.examcode && e.specialization === comm.specialization
-    );
-    if (!exam) {
-        exam = examsData.find((e) => e.coursecode === comm.examcode);
-    }
-    return exam;
-}
+// 1. GET Full State
+app.get('/api/state', async (req, res) => {
+    try {
+        const [students, studentCourses, exams, rooms, proctors, committees, commProctors, commStudents, drafts] = await Promise.all([
+            fetchTable('students'),
+            fetchTable('student_courses'),
+            fetchTable('exams'),
+            fetchTable('rooms'),
+            fetchTable('proctors'),
+            fetchTable('committees'),
+            fetchTable('committee_proctors'),
+            fetchTable('committee_students'),
+            fetchTable('draft_schedules'),
+        ]);
 
-function mapExamRow(exam) {
-    if (!exam) return null;
-    return {
-        courseCode: exam.coursecode,
-        courseName: exam.coursename,
-        date: exam.date,
-        time: exam.time,
-        duration: exam.duration,
-        type: exam.type,
-        department: exam.department,
-        specialization: exam.specialization,
-    };
-}
+        const state = {};
+        const studentsData = students.rows || students;
+        const studentCoursesData = studentCourses.rows || studentCourses;
+        const examsData = exams.rows || exams;
+        const roomsData = rooms.rows || rooms;
+        const proctorsData = proctors.rows || proctors;
+        const committeesData = committees.rows || committees;
+        const commProctorsData = commProctors.rows || commProctors;
+        const commStudentsData = commStudents.rows || commStudents;
+        const draftsData = drafts.rows || drafts;
 
-async function buildFullState() {
-    const [students, studentCourses, exams, rooms, proctors, committees, commProctors, commStudents, drafts] = await Promise.all([
-        fetchTable('students'),
-        fetchTable('student_courses'),
-        fetchTable('exams'),
-        fetchTable('rooms'),
-        fetchTable('proctors'),
-        fetchTable('committees'),
-        fetchTable('committee_proctors'),
-        fetchTable('committee_students'),
-        fetchTable('draft_schedules'),
-    ]);
-
-    const studentsData = students.rows || students;
-    const studentCoursesData = studentCourses.rows || studentCourses;
-    const examsData = exams.rows || exams;
-    const roomsData = rooms.rows || rooms;
-    const proctorsData = proctors.rows || proctors;
-    const committeesData = committees.rows || committees;
-    const commProctorsData = commProctors.rows || commProctors;
-    const commStudentsData = commStudents.rows || commStudents;
-    const draftsData = drafts.rows || drafts;
-
-    return {
-        students: studentsData.map((s) => ({
+        // Reconstruct Students with Courses
+        state.students = studentsData.map(s => ({
             id: s.id,
             name: s.name,
             specialization: s.specialization,
-            courseCodes: studentCoursesData
-                .filter((sc) => sc.studentid === s.id)
-                .map((sc) => sc.coursecode),
-        })),
-        exams: examsData.map((e) => ({
+            courseCodes: studentCoursesData.filter(sc => sc.studentid === s.id).map(sc => sc.coursecode)
+        }));
+
+        // Exams, Rooms, Proctors (Direct mapping)
+        state.exams = examsData.map(e => ({
             courseCode: e.coursecode,
             courseName: e.coursename,
             date: e.date,
@@ -892,198 +850,40 @@ async function buildFullState() {
             duration: e.duration,
             type: e.type,
             department: e.department,
-            specialization: e.specialization,
-        })),
-        rooms: roomsData,
-        proctors: proctorsData,
-        committees: committeesData.map((c) => ({
+            specialization: e.specialization
+        }));
+        
+        state.rooms = roomsData;
+        state.proctors = proctorsData;
+
+        // Reconstruct Committees
+        state.committees = committeesData.map(c => ({
             id: c.id,
             examCode: c.examcode,
             specialization: c.specialization,
             roomId: c.roomid,
-            proctorIds: commProctorsData
-                .filter((cp) => cp.committeeid === c.id)
-                .map((cp) => cp.proctorid),
-            studentIds: commStudentsData
-                .filter((cs) => cs.committeeid === c.id)
-                .map((cs) => cs.studentid),
-        })),
-        drafts: draftsData.map((d) => ({
+            proctorIds: commProctorsData.filter(cp => cp.committeeid === c.id).map(cp => cp.proctorid),
+            studentIds: commStudentsData.filter(cs => cs.committeeid === c.id).map(cs => cs.studentid)
+        }));
+
+        state.drafts = draftsData.map(d => ({
             id: d.id,
             name: d.name,
             createdAt: d.created_at,
-            ...d.payload,
-        })),
-    };
-}
+            ...d.payload
+        }));
 
-// 1. GET Full State (manager / dept_head only)
-app.get('/api/state', requireAuthenticatedRead, async (req, res) => {
-    try {
-        res.json(await buildFullState());
+        res.json(state);
     } catch (err) {
-        console.error('Error fetching state:', err);
+        console.error("Error fetching state:", err);
         console.error(err.stack || err);
-        res.status(500).json({ error: 'Failed to fetch data from database', detail: err.message });
+        // Include error message for debugging (remove in production)
+        res.status(500).json({ error: "Failed to fetch data from database", detail: err.message });
     }
 });
 
-// Portal: student schedule lookup (scoped — no full database dump)
-app.get('/api/portal/student/:studentId', async (req, res) => {
-    try {
-        const studentId = String(req.params.studentId || '').trim();
-        if (!studentId) {
-            return res.status(400).json({ error: 'رقم المتدرب مطلوب' });
-        }
-
-        const [students, exams, rooms, committees, commStudents] = await Promise.all([
-            fetchTable('students'),
-            fetchTable('exams'),
-            fetchTable('rooms'),
-            fetchTable('committees'),
-            fetchTable('committee_students'),
-        ]);
-
-        const studentsData = students.rows || students;
-        const examsData = exams.rows || exams;
-        const roomsData = rooms.rows || rooms;
-        const committeesData = committees.rows || committees;
-        const commStudentsData = commStudents.rows || commStudents;
-
-        const student = studentsData.find((s) => s.id === studentId);
-        if (!student) {
-            return res.status(404).json({ error: 'تأكد من وضع الاتصال وحاول مره اخرى' });
-        }
-
-        const studentCommitteeIds = commStudentsData
-            .filter((cs) => cs.studentid === studentId)
-            .map((cs) => cs.committeeid);
-
-        const schedule = committeesData
-            .filter((comm) => studentCommitteeIds.includes(comm.id))
-            .map((comm) => {
-                const exam = findExamForCommittee(examsData, comm);
-                const room = roomsData.find((r) => r.id === comm.roomid);
-                return {
-                    ...mapExamRow(exam),
-                    roomName: room?.name,
-                    roomType: room?.type,
-                };
-            })
-            .filter((item) => item.courseCode)
-            .sort((a, b) => {
-                if (!a.date || !b.date) return 0;
-                return new Date(a.date).getTime() - new Date(b.date).getTime();
-            });
-
-        res.json({
-            student: {
-                id: student.id,
-                name: student.name,
-                specialization: student.specialization,
-            },
-            schedule,
-        });
-    } catch (err) {
-        console.error('Student portal lookup error:', err);
-        res.status(500).json({ error: 'فشل جلب جدول المتدرب' });
-    }
-});
-
-// Portal: proctor schedule lookup (scoped)
-app.get('/api/portal/proctor-schedule', async (req, res) => {
-    try {
-        const query = String(req.query.q || '').trim();
-        if (!query) {
-            return res.status(400).json({ error: 'رقم أو اسم المراقب مطلوب' });
-        }
-
-        const [proctors, exams, rooms, committees, commProctors, commStudents] = await Promise.all([
-            fetchTable('proctors'),
-            fetchTable('exams'),
-            fetchTable('rooms'),
-            fetchTable('committees'),
-            fetchTable('committee_proctors'),
-            fetchTable('committee_students'),
-        ]);
-
-        const proctorsData = proctors.rows || proctors;
-        const examsData = exams.rows || exams;
-        const roomsData = rooms.rows || rooms;
-        const committeesData = committees.rows || committees;
-        const commProctorsData = commProctors.rows || commProctors;
-        const commStudentsData = commStudents.rows || commStudents;
-
-        const foundProctor = proctorsData.find(
-            (p) => p.id === query || String(p.name || '').includes(query)
-        );
-        if (!foundProctor) {
-            return res.status(404).json({ error: 'لم يتم العثور على مراقب بهذا الرقم أو الاسم' });
-        }
-
-        const proctorCommitteeIds = commProctorsData
-            .filter((cp) => cp.proctorid === foundProctor.id)
-            .map((cp) => cp.committeeid);
-
-        const proctorCommittees = committeesData.filter((comm) =>
-            proctorCommitteeIds.includes(comm.id)
-        );
-
-        const merged = {};
-        proctorCommittees.forEach((comm) => {
-            const exam = findExamForCommittee(examsData, comm);
-            const room = roomsData.find((r) => r.id === comm.roomid);
-            const partnerId = commProctorsData
-                .filter((cp) => cp.committeeid === comm.id)
-                .map((cp) => cp.proctorid)
-                .find((id) => id !== foundProctor.id);
-            const partner = partnerId
-                ? proctorsData.find((p) => p.id === partnerId)
-                : null;
-            const slotKey = `${exam?.date || ''}__${exam?.time || ''}__${room?.id || comm.roomid}`;
-
-            if (!merged[slotKey]) {
-                merged[slotKey] = {
-                    date: exam?.date,
-                    time: exam?.time,
-                    roomName: room?.name,
-                    roomType: room?.type,
-                    partnerName: partner?.name || '---',
-                    courseNames: [],
-                    committeeIds: [],
-                    studentCount: 0,
-                };
-            }
-
-            merged[slotKey].courseNames.push(exam?.coursename || comm.examcode);
-            merged[slotKey].committeeIds.push(comm.id);
-            merged[slotKey].studentCount += commStudentsData.filter(
-                (cs) => cs.committeeid === comm.id
-            ).length;
-        });
-
-        const schedule = Object.values(merged)
-            .sort((a, b) => {
-                if (!a.date || !b.date) return 0;
-                return new Date(a.date).getTime() - new Date(b.date).getTime();
-            });
-
-        res.json({
-            proctor: {
-                id: foundProctor.id,
-                name: foundProctor.name,
-                department: foundProctor.department,
-            },
-            schedule,
-        });
-    } catch (err) {
-        console.error('Proctor portal lookup error:', err);
-        res.status(500).json({ error: 'فشل جلب جدول المراقب' });
-    }
-});
-
-// 2. POST Full State (Sync) — manager only
-app.post('/api/sync', requireManager, async (req, res) => {
+// 2. POST Full State (Sync)
+app.post('/api/sync', async (req, res) => {
     const data = req.body;
     console.log(`[${new Date().toLocaleTimeString()}] 📥 Received sync request (Committees: ${data.committees?.length || 0})`);
 
@@ -1298,8 +1098,8 @@ app.post('/api/sync', requireManager, async (req, res) => {
     }
 });
 
-// 3. POST Load Demo Data (for testing when database is empty) — manager only
-app.post('/api/load-demo-data', requireManager, async (req, res) => {
+// 3. POST Load Demo Data (for testing when database is empty)
+app.post('/api/load-demo-data', async (req, res) => {
     if (useSupabaseClient) {
         try {
             await deleteAll('committee_students', 'committeeId');
