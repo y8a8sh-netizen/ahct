@@ -1,5 +1,7 @@
 const geoip = require('geoip-lite');
 
+const jwt = require('jsonwebtoken');
+
 const BLOCKED_MESSAGE =
     'الموقع متاح داخل السعوديه ولا يسمح لمستخدم ال vpn بالدخول';
 
@@ -153,11 +155,25 @@ function getBlockedPageHtml() {
 </html>`;
 }
 
+function hasStaffAuthToken(req) {
+    const header = req.headers.authorization || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) return false;
+    try {
+        const secret = process.env.JWT_SECRET || 'tvtc-college-scheduler-dev-secret-change-in-production';
+        const payload = jwt.verify(token, secret);
+        return payload.role === 'manager' || payload.role === 'dept_head';
+    } catch {
+        return false;
+    }
+}
+
 function createGeoMiddleware() {
     return async (req, res, next) => {
         if (!isGeoRestrictEnabled()) return next();
         if (req.path === '/api/health') return next();
         if (req.method === 'OPTIONS') return next();
+        if (hasStaffAuthToken(req)) return next();
 
         const countryHeader = req.headers['x-vercel-ip-country'] || null;
         const ip = getClientIpFromExpress(req);
