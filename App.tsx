@@ -51,12 +51,6 @@ const App: React.FC = () => {
   const [hasServerSnapshot, setHasServerSnapshot] = useState(false);
   const [loadError, setLoadError] = useState('');
 
-  const refreshServerConnection = useCallback(async () => {
-      const healthy = await checkServerHealth();
-      setIsServerConnected(healthy);
-      return healthy;
-  }, []);
-
   const loadFullState = useCallback(async () => {
       const serverData = await fetchSystemState();
       if (serverData) {
@@ -67,11 +61,11 @@ const App: React.FC = () => {
           console.log('✅ Loaded data from server (PostgreSQL database)');
           return true;
       }
+      setIsServerConnected(false);
       setHasServerSnapshot(false);
       setLoadError('تعذر جلب البيانات. أعد تسجيل الدخول أو تحقق من الاتصال بالخادم.');
-      await refreshServerConnection();
       return false;
-  }, [refreshServerConnection]);
+  }, []);
 
   const isGuestPortalRole = (role?: string | null) => role === 'student' || role === 'proctor';
 
@@ -82,13 +76,12 @@ const App: React.FC = () => {
           const token = getAuthToken();
 
           if (portal && isGuestPortalRole(portal)) {
-              await refreshServerConnection();
+              const healthy = await checkServerHealth();
+              setIsServerConnected(healthy);
               setData(initialData);
               setIsInitialized(true);
               return;
           }
-
-          await refreshServerConnection();
 
           if (token) {
               const loaded = await loadFullState();
@@ -104,7 +97,7 @@ const App: React.FC = () => {
       };
 
       initData();
-  }, [loadFullState, refreshServerConnection]);
+  }, [loadFullState]);
 
   // 🔄 AUTO-REFRESH: Poll server for updates (for read-only users)
   useEffect(() => {
@@ -173,12 +166,9 @@ const App: React.FC = () => {
       }
 
       if (user.role === 'manager' || user.role === 'dept_head') {
-          await refreshServerConnection();
           await loadFullState();
-      } else if (user.role === 'student' || user.role === 'proctor') {
-          await refreshServerConnection();
       }
-  }, [loadFullState, refreshServerConnection]);
+  }, [loadFullState]);
 
   const handleLogout = useCallback(() => {
       const role = currentUser?.role;

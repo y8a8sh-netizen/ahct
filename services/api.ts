@@ -1,29 +1,20 @@
 
 import { AuthLoginResponse, StudentInstructions, SystemState, SystemUser, UserRole, UserSession } from '../types';
 import { clearAuthToken, getAuthHeaders, setAuthToken } from '../utils/auth';
-const DEFAULT_PRODUCTION_API = 'https://ahct.onrender.com';
-
-const resolveApiBase = (): string => {
-    let base = (import.meta.env.VITE_API_BASE_URL || '').trim();
-
-    if (!base && typeof window !== 'undefined') {
-        const host = window.location.hostname;
-        if (host === 'localhost' || host === '127.0.0.1') {
-            base = `http://${host}:3001`;
-        } else {
-            base = DEFAULT_PRODUCTION_API;
-        }
-    }
-
-    if (!base) {
-        base = DEFAULT_PRODUCTION_API;
-    }
-
-    return base.replace(/\/$/, '').replace(/\/api$/, '');
-};
-
 // هذا يسمح بالعمل سواء كنت على localhost أو عبر الشبكة (IP Address)
-const getApiUrl = () => `${resolveApiBase()}/api`;
+const getApiUrl = () => {
+    const configuredUrl = import.meta.env.VITE_API_BASE_URL || '';
+    if (configuredUrl.trim()) {
+        return `${configuredUrl.replace(/\/$/, '')}/api`;
+    }
+
+    let hostname = window.location.hostname;
+    if (!hostname || hostname.trim() === '') {
+        hostname = '127.0.0.1';
+    }
+
+    return `http://${hostname}:3001/api`;
+};
 
 export const fetchSystemState = async (): Promise<SystemState | null> => {
     try {
@@ -62,7 +53,8 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
 
 export const checkServerHealth = async (): Promise<boolean> => {
     try {
-        const response = await fetch(`${resolveApiBase()}/api/health`);
+        const base = getApiUrl().replace(/\/api$/, '');
+        const response = await fetch(`${base}/api/health`);
         return response.ok;
     } catch {
         return false;
