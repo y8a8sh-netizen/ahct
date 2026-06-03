@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Analytics } from '@vercel/analytics/react';
 import Layout from './components/Layout';
 import ManagerDashboard from './pages/ManagerDashboard';
@@ -47,6 +47,12 @@ const App: React.FC = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [portalResetKey, setPortalResetKey] = useState(0);
+  const managerEditedRef = useRef(false);
+
+  const setDataFromManager = useCallback((value: React.SetStateAction<SystemState>) => {
+      managerEditedRef.current = true;
+      setData(value);
+  }, []);
 
   // 1. Initialize Data (Server is the ONLY source of truth)
   useEffect(() => {
@@ -99,7 +105,7 @@ const App: React.FC = () => {
 
       // Only managers can write to localStorage and sync to server
       // Read-only users (students, proctors, dept heads) should NOT save or sync
-      if (currentUser && !currentUser.readOnly) {
+      if (currentUser && !currentUser.readOnly && managerEditedRef.current) {
           // Save locally as backup/cache (only for managers)
           localStorage.setItem('tvtc_exam_system', JSON.stringify(data));
 
@@ -120,6 +126,7 @@ const App: React.FC = () => {
   // Handle Login Logic
   const handleLogin = useCallback((user: UserSession) => {
       setCurrentUser(user);
+      managerEditedRef.current = false;
       
       // Clear localStorage for read-only users to prevent old data pollution
       if (user.readOnly) {
@@ -180,19 +187,19 @@ const App: React.FC = () => {
         onLogout={handleLogout}
     >
             {activeTab === 'manager' && currentUser.role === 'manager' && (
-                <ManagerDashboard data={data} setData={setData} currentUser={currentUser} />
+                <ManagerDashboard data={data} setData={setDataFromManager} currentUser={currentUser} />
             )}
             {activeTab === 'print_proctor_schedules' && currentUser.role === 'manager' && (
                 <PrintProctorSchedules data={data} />
             )}
             {activeTab === 'smart_schedule' && currentUser.role === 'manager' && (
-                <AiScheduleBuilder data={data} setData={setData} currentUser={currentUser} />
+                <AiScheduleBuilder data={data} setData={setDataFromManager} currentUser={currentUser} />
             )}
             {activeTab === 'admin_schedule_editor' && currentUser.role === 'manager' && (
-                <AdminScheduleEditor data={data} setData={setData} />
+                <AdminScheduleEditor data={data} setData={setDataFromManager} />
             )}
             {activeTab === 'manage_students' && currentUser.role === 'manager' && (
-                <ManagerDashboard data={data} setData={setData} currentUser={currentUser} initialSection="manage-students" />
+                <ManagerDashboard data={data} setData={setDataFromManager} currentUser={currentUser} initialSection="manage-students" />
             )}
             {activeTab === 'permissions' && currentUser.role === 'manager' && (
                 <PermissionsManagement currentUser={currentUser} />

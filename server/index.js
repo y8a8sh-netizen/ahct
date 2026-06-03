@@ -765,13 +765,35 @@ async function initDatabase() {
 
 async function fetchTable(table) {
     if (useSupabaseClient) {
-        const { data, error } = await supabase.from(table).select('*');
-        if (error) throw error;
-        return data || [];
+        const pageSize = 1000;
+        let from = 0;
+        let all = [];
+        while (true) {
+            const { data, error } = await supabase
+                .from(table)
+                .select('*')
+                .range(from, from + pageSize - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            all = all.concat(data);
+            if (data.length < pageSize) break;
+            from += pageSize;
+        }
+        return all;
     }
 
     const result = await pool.query(`SELECT * FROM ${table}`);
     return result.rows;
+}
+
+function getRowValue(row, ...keys) {
+    if (!row) return undefined;
+    for (const key of keys) {
+        if (row[key] !== undefined && row[key] !== null) return row[key];
+        const lower = String(key).toLowerCase();
+        if (row[lower] !== undefined && row[lower] !== null) return row[lower];
+    }
+    return undefined;
 }
 
 async function deleteAll(table, filterColumn) {
@@ -787,8 +809,12 @@ async function bulkInsert(table, rows) {
     if (!rows || rows.length === 0) return;
 
     if (useSupabaseClient) {
-        const { error } = await supabase.from(table).insert(rows, { returning: 'minimal' });
-        if (error) throw error;
+        const chunkSize = 500;
+        for (let i = 0; i < rows.length; i += chunkSize) {
+            const chunk = rows.slice(i, i + chunkSize);
+            const { error } = await supabase.from(table).insert(chunk, { returning: 'minimal' });
+            if (error) throw error;
+        }
         return;
     }
 
@@ -834,36 +860,45 @@ app.get('/api/state', async (req, res) => {
         const draftsData = drafts.rows || drafts;
 
         // Reconstruct Students with Courses
-        state.students = studentsData.map(s => ({
+        state.students = studentsData.map((s) => ({
             id: s.id,
             name: s.name,
             specialization: s.specialization,
-            courseCodes: studentCoursesData.filter(sc => sc.studentid === s.id).map(sc => sc.coursecode)
+            courseCodes: studentCoursesData
+                .filter((sc) => getRowValue(sc, 'studentId', 'studentid') === s.id)
+                .map((sc) => getRowValue(sc, 'courseCode', 'coursecode'))
+                .filter(Boolean),
         }));
 
         // Exams, Rooms, Proctors (Direct mapping)
-        state.exams = examsData.map(e => ({
-            courseCode: e.coursecode,
-            courseName: e.coursename,
+        state.exams = examsData.map((e) => ({
+            courseCode: getRowValue(e, 'courseCode', 'coursecode'),
+            courseName: getRowValue(e, 'courseName', 'coursename'),
             date: e.date,
             time: e.time,
             duration: e.duration,
             type: e.type,
             department: e.department,
-            specialization: e.specialization
+            specialization: e.specialization,
         }));
         
         state.rooms = roomsData;
         state.proctors = proctorsData;
 
         // Reconstruct Committees
-        state.committees = committeesData.map(c => ({
+        state.committees = committeesData.map((c) => ({
             id: c.id,
-            examCode: c.examcode,
+            examCode: getRowValue(c, 'examCode', 'examcode'),
             specialization: c.specialization,
-            roomId: c.roomid,
-            proctorIds: commProctorsData.filter(cp => cp.committeeid === c.id).map(cp => cp.proctorid),
-            studentIds: commStudentsData.filter(cs => cs.committeeid === c.id).map(cs => cs.studentid)
+            roomId: getRowValue(c, 'roomId', 'roomid'),
+            proctorIds: commProctorsData
+                .filter((cp) => getRowValue(cp, 'committeeId', 'committeeid') === c.id)
+                .map((cp) => getRowValue(cp, 'proctorId', 'proctorid'))
+                .filter(Boolean),
+            studentIds: commStudentsData
+                .filter((cs) => getRowValue(cs, 'committeeId', 'committeeid') === c.id)
+                .map((cs) => getRowValue(cs, 'studentId', 'studentid'))
+                .filter(Boolean),
         }));
 
         state.drafts = draftsData.map(d => ({
@@ -1090,7 +1125,11 @@ app.post('/api/sync', async (req, res) => {
         res.json({ success: true, message: "Database synchronized successfully" });
         
     } catch (err) {
-        await client.query('ROLLBACK');
+        try {
+            await client.query('ROLLBACK');
+        } catch (rollbackErr) {
+            console.error('Rollback failed:', rollbackErr.message);
+        }
         console.error("Transaction Error:", err);
         res.status(500).json({ error: err.message });
     } finally {
