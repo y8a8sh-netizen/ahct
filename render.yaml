@@ -10,3 +10,7 @@ services:
         sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: GEO_RESTRICT_SA
+        sync: false
+      - key: GEO_BLOCK_VPN
+        value: "true"

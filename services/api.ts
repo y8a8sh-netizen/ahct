@@ -21,11 +21,11 @@ const getApiUrl = () => {
 export const fetchSystemState = async (): Promise<SystemState | null> => {
     try {
         const url = `${getApiUrl()}/state`;
-        const response = await fetch(url);
+        const response = await fetch(url, { headers: getAuthHeaders() });
+        if (response.status === 401 || response.status === 403) return null;
         if (!response.ok) throw new Error('Network response was not ok');
         return await response.json();
     } catch (error) {
-        // Log as info/warn instead of error to avoid alarming user in offline mode
         console.warn('Server connection skipped (Offline Mode):', error instanceof Error ? error.message : error);
         return null;
     }
@@ -38,6 +38,7 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
+                ...getAuthHeaders(),
             },
             body: JSON.stringify(data),
         });
@@ -45,6 +46,66 @@ export const syncSystemState = async (data: SystemState): Promise<boolean> => {
     } catch (error) {
         console.warn('Sync failed (Offline Mode):', error instanceof Error ? error.message : error);
         return false;
+    }
+};
+
+export const checkServerHealth = async (): Promise<boolean> => {
+    try {
+        const base = getApiUrl().replace(/\/api$/, '');
+        const response = await fetch(`${base}/api/health`);
+        return response.ok;
+    } catch {
+        return false;
+    }
+};
+
+export type StudentPortalScheduleItem = {
+    courseCode: string;
+    courseName: string;
+    date: string;
+    time: string;
+    duration: number;
+    type: string;
+    department: string;
+    specialization: string;
+    roomName?: string;
+    roomType?: string;
+};
+
+export const fetchStudentPortalSchedule = async (
+    studentId: string
+): Promise<{ student: { id: string; name: string; specialization: string }; schedule: StudentPortalScheduleItem[] } | null> => {
+    try {
+        const url = `${getApiUrl()}/portal/student/${encodeURIComponent(studentId.trim())}`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        return null;
+    }
+};
+
+export type ProctorPortalScheduleItem = {
+    date: string;
+    time: string;
+    roomName?: string;
+    roomType?: string;
+    partnerName: string;
+    courseNames: string[];
+    committeeIds: string[];
+    studentCount: number;
+};
+
+export const fetchProctorPortalSchedule = async (
+    query: string
+): Promise<{ proctor: { id: string; name: string; department?: string }; schedule: ProctorPortalScheduleItem[] } | null> => {
+    try {
+        const url = `${getApiUrl()}/portal/proctor-schedule?q=${encodeURIComponent(query.trim())}`;
+        const response = await fetch(url);
+        if (!response.ok) return null;
+        return await response.json();
+    } catch {
+        return null;
     }
 };
 

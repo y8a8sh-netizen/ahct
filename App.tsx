@@ -13,8 +13,9 @@ import { Student, Exam, Room, Proctor, Committee, DraftSchedule, SystemState, Us
 import PrintProctorSchedules from './pages/PrintProctorSchedules';
 import PermissionsManagement from './pages/PermissionsManagement';
 import InstructionsManagement from './pages/InstructionsManagement';
-import { fetchSystemState, logoutUser, syncSystemState } from './services/api';
+import { fetchSystemState, logoutUser, syncSystemState, checkServerHealth } from './services/api';
 import { readPortalFromBrowser, setPortalPath, createGuestPortalSession } from './utils/routes';
+import { getAuthToken } from './utils/auth';
 
 // Initial Mock Data
 const initialData: SystemState = {
@@ -48,50 +49,66 @@ const App: React.FC = () => {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [portalResetKey, setPortalResetKey] = useState(0);
 
-  // 1. Initialize Data (Server is the ONLY source of truth)
-  useEffect(() => {
-      const initData = async () => {
-          // Try fetching from Server
-          const serverData = await fetchSystemState();
-          
-          if (serverData) {
-              setIsServerConnected(true);
-              
-              // ✅ ALWAYS use server data as the source of truth
-              setData(serverData);
-              
-              console.log("✅ Loaded data from server (PostgreSQL database)");
-          } else {
-              // Server Offline -> Start with empty data, no localStorage fallback
-              console.warn("⚠️ Server unreachable. Starting with empty data.");
-              console.warn("💡 Please ensure PostgreSQL server is running.");
-              setData(initialData);
-          }
-          setIsInitialized(true);
-      };
+  const loadFullState = useCallback(async () => {
+      const serverData = await fetchSystemState();
+      if (serverData) {
+          setIsServerConnected(true);
+          setData(serverData);
+          console.log('✅ Loaded data from server (PostgreSQL database)');
+          return true;
+      }
+      setIsServerConnected(false);
+      return false;
+  }, []);
 
-      initData();
-  }, []);
+  const isGuestPortalRole = (role?: string | null) => role === 'student' || role === 'proctor';
+
+  // 1. Initialize Data (Server is the ONLY source of truth)
+  useEffect(() => {
+      const initData = async () => {
+          const portal = readPortalFromBrowser();
+          const token = getAuthToken();
+
+          if (portal && isGuestPortalRole(portal)) {
+              const healthy = await checkServerHealth();
+              setIsServerConnected(healthy);
+              setData(initialData);
+              setIsInitialized(true);
+              return;
+          }
+
+          if (token) {
+              const loaded = await loadFullState();
+              if (!loaded) {
+                  console.warn('⚠️ Server unreachable or session expired. Starting with empty data.');
+                  setData(initialData);
+              }
+          } else {
+              setData(initialData);
+          }
+
+          setIsInitialized(true);
+      };
+
+      initData();
+  }, [loadFullState]);
 
   // 🔄 AUTO-REFRESH: Poll server for updates (for read-only users)
   useEffect(() => {
       if (!currentUser || !isServerConnected) return;
 
-      // Only auto-refresh for read-only users (students, proctors, dept heads)
-      if (currentUser.readOnly) {
-          console.log(`🔄 Auto-refresh enabled for ${currentUser.role} (every 10 seconds)`);
-          
-          const refreshInterval = setInterval(async () => {
-              const serverData = await fetchSystemState();
-              if (serverData) {
-                  setData(serverData);
-                  console.log(`🔄 Data refreshed automatically at ${new Date().toLocaleTimeString()}`);
-              }
-          }, 10000); // Refresh every 10 seconds
+      // Only auto-refresh for dept heads (authenticated read-only)
+      if (currentUser.readOnly && currentUser.role === 'dept_head') {
+          console.log(`🔄 Auto-refresh enabled for ${currentUser.role} (every 10 seconds)`);
+          
+          const refreshInterval = setInterval(async () => {
+              await loadFullState();
+              console.log(`🔄 Data refreshed automatically at ${new Date().toLocaleTimeString()}`);
+          }, 10000);
 
-          return () => clearInterval(refreshInterval);
-      }
-  }, [currentUser, isServerConnected]);
+          return () => clearInterval(refreshInterval);
+      }
+  }, [currentUser, isServerConnected, loadFullState]);
 
   // 2. Auto-Sync Logic (Persist to Local & Server)
   useEffect(() => {
@@ -141,7 +158,11 @@ const App: React.FC = () => {
       } else {
           setPortalPath(null);
       }
-  }, []);
+
+      if (user.role === 'manager' || user.role === 'dept_head') {
+          loadFullState();
+      }
+  }, [loadFullState]);
 
   const handleLogout = useCallback(() => {
       const role = currentUser?.role;
@@ -223,7 +244,7 @@ const App: React.FC = () => {
           )}
           
           {/* Auto-refresh indicator for read-only users */}
-          {currentUser && currentUser.readOnly && isServerConnected && (
+          {currentUser && currentUser.readOnly && currentUser.role === 'dept_head' && isServerConnected && (
               <span className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
                   تحديث تلقائي كل 10 ثواني
