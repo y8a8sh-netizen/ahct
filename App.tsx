@@ -209,15 +209,9 @@ const App: React.FC = () => {
              <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full border border-gray-200 shadow-sm flex items-center gap-1">
                 <span className="w-2 h-2 bg-gray-400 rounded-full"></span> وضع غير متصل (محلي)
              </span>
-          )}
-          
-          {currentUser?.readOnly && isServerConnected && (
-              <span className="bg-gray-50 text-gray-600 text-[10px] px-2 py-0.5 rounded-full border border-gray-200">
-                  لتحديث البيانات: حدّث الصفحة (F5)
-              </span>
           )}
-          
-          {lastSaved && isServerConnected && currentUser && !currentUser.readOnly && (
+
+          {lastSaved && isServerConnected && currentUser && !currentUser.readOnly && (
               <span className="text-[10px] text-gray-500 font-mono px-1">
                   آخر حفظ تلقائي: {lastSaved.toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit', second:'2-digit'})}
               </span>
