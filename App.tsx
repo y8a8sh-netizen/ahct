@@ -79,25 +79,23 @@ const App: React.FC = () => {
       initData();
   }, []);
 
-  // 🔄 AUTO-REFRESH: Poll server for updates (for read-only users)
-  useEffect(() => {
-      if (!currentUser || !isServerConnected) return;
+  // 🔄 AUTO-REFRESH: dept heads only (students/proctors load once — manual F5 to refresh)
+  useEffect(() => {
+      if (!currentUser || !isServerConnected) return;
+      if (currentUser.role !== 'dept_head') return;
 
-      // Only auto-refresh for read-only users (students, proctors, dept heads)
-      if (currentUser.readOnly) {
-          console.log(`🔄 Auto-refresh enabled for ${currentUser.role} (every 10 seconds)`);
-          
-          const refreshInterval = setInterval(async () => {
-              const serverData = await fetchSystemState();
-              if (serverData) {
-                  setData(serverData);
-                  console.log(`🔄 Data refreshed automatically at ${new Date().toLocaleTimeString()}`);
-              }
-          }, 10000); // Refresh every 10 seconds
+      console.log('🔄 Auto-refresh enabled for dept_head (every 60 seconds)');
 
-          return () => clearInterval(refreshInterval);
-      }
-  }, [currentUser, isServerConnected]);
+      const refreshInterval = setInterval(async () => {
+          const serverData = await fetchSystemState();
+          if (serverData) {
+              setData(serverData);
+              console.log(`🔄 Data refreshed automatically at ${new Date().toLocaleTimeString()}`);
+          }
+      }, 60000);
+
+      return () => clearInterval(refreshInterval);
+  }, [currentUser, isServerConnected]);
 
   // 2. Auto-Sync Logic (Persist to Local & Server)
   useEffect(() => {
@@ -229,13 +227,18 @@ const App: React.FC = () => {
              </span>
           )}
           
-          {/* Auto-refresh indicator for read-only users */}
-          {currentUser && currentUser.readOnly && isServerConnected && (
-              <span className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-                  تحديث تلقائي كل 10 ثواني
-              </span>
-          )}
+          {currentUser?.role === 'dept_head' && isServerConnected && (
+              <span className="bg-blue-50 text-blue-700 text-[10px] px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
+                  تحديث تلقائي كل 60 ثانية
+              </span>
+          )}
+
+          {(currentUser?.role === 'student' || currentUser?.role === 'proctor') && isServerConnected && (
+              <span className="bg-gray-50 text-gray-600 text-[10px] px-2 py-0.5 rounded-full border border-gray-200">
+                  لتحديث البيانات: حدّث الصفحة (F5)
+              </span>
+          )}
           
           {lastSaved && isServerConnected && currentUser && !currentUser.readOnly && (
               <span className="text-[10px] text-gray-500 font-mono px-1">
