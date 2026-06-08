@@ -10,6 +10,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'tvtc-college-scheduler-dev-secret-change-in-production';
+const BOOTSTRAP_MANAGER_USERNAME = (process.env.BOOTSTRAP_MANAGER_USERNAME || 'postgres').trim();
+const BOOTSTRAP_MANAGER_PASSWORD = (process.env.BOOTSTRAP_MANAGER_PASSWORD || 'admin123').trim();
+const BOOTSTRAP_MANAGER_NAME = (process.env.BOOTSTRAP_MANAGER_NAME || 'مدير النظام').trim();
 
 // Render وغيره قد يفشلون مع IPv6 — نفضّل IPv4 دائماً
 if (typeof dns.setDefaultResultOrder === 'function') {
@@ -138,9 +141,12 @@ const activateSupabaseHttpClient = (client) => {
     dbConnectionMode = 'supabase-http';
     isSupabaseConnected = true;
     console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase عبر HTTP client ✅ ✅ ✅');
-    warmHttpTableColumnsCache().catch((err) => {
-        console.warn('HTTP column cache warmup failed:', err.message || err);
-    });
+    Promise.resolve()
+        .then(() => warmHttpTableColumnsCache())
+        .then(() => ensureBootstrapManager())
+        .catch((err) => {
+            console.warn('HTTP startup warmup failed:', err.message || err);
+        });
 };
 
 let syncInProgress = false;
@@ -195,6 +201,7 @@ const connectPostgres = async () => {
     console.log('📅 وقت السيرفر:', res.rows[0].now);
     console.log('🔌 وضع الاتصال: Direct PostgreSQL\n');
     await initDatabase();
+    await ensureBootstrapManager();
 };
 
 const logConnectionFailure = (err) => {
@@ -339,6 +346,36 @@ async function countManagers() {
     }
     const result = await pool.query("SELECT COUNT(*)::int AS c FROM users WHERE role = 'manager'");
     return result.rows[0].c;
+}
+
+async function ensureBootstrapManager() {
+    if (!isSupabaseConnected) return;
+    try {
+        const managers = await countManagers();
+        if (managers > 0) return;
+        if (!BOOTSTRAP_MANAGER_USERNAME || !BOOTSTRAP_MANAGER_PASSWORD) return;
+
+        const hash = await bcrypt.hash(BOOTSTRAP_MANAGER_PASSWORD, 10);
+        if (useSupabaseClient) {
+            const { error } = await supabase.from('users').insert({
+                username: BOOTSTRAP_MANAGER_USERNAME,
+                password_hash: hash,
+                role: 'manager',
+                name: BOOTSTRAP_MANAGER_NAME,
+            });
+            if (error) throw error;
+        } else {
+            await pool.query(
+                `INSERT INTO users (username, password_hash, role, name)
+                 VALUES ($1, $2, 'manager', $3)
+                 ON CONFLICT (username) DO NOTHING`,
+                [BOOTSTRAP_MANAGER_USERNAME, hash, BOOTSTRAP_MANAGER_NAME]
+            );
+        }
+        console.log(`✅ Bootstrap manager ready (username: ${BOOTSTRAP_MANAGER_USERNAME})`);
+    } catch (err) {
+        console.error('❌ Bootstrap manager failed:', err.message || err);
+    }
 }
 
 async function getStudentInstructions() {
