@@ -448,6 +448,46 @@ async function setStudentInstructions(payload) {
     };
 }
 
+app.post('/api/auth/bootstrap', async (req, res) => {
+    try {
+        if (!isSupabaseConnected) {
+            return res.status(503).json({ error: 'قاعدة البيانات غير متصلة' });
+        }
+        if ((await countManagers()) > 0) {
+            return res.status(403).json({ error: 'يوجد مدير مسجل بالفعل' });
+        }
+
+        const username = String(req.body?.username || BOOTSTRAP_MANAGER_USERNAME).trim();
+        const password = String(req.body?.password || BOOTSTRAP_MANAGER_PASSWORD).trim();
+        const name = String(req.body?.name || BOOTSTRAP_MANAGER_NAME).trim();
+        if (!username || !password || !name) {
+            return res.status(400).json({ error: 'اسم المستخدم وكلمة المرور والاسم مطلوبة' });
+        }
+
+        const hash = await bcrypt.hash(password, 10);
+        if (useSupabaseClient) {
+            const { data, error } = await supabase
+                .from('users')
+                .insert({ username, password_hash: hash, role: 'manager', name })
+                .select('id, username, role, name')
+                .single();
+            if (error) throw error;
+            return res.json({ ok: true, user: data });
+        }
+
+        const result = await pool.query(
+            `INSERT INTO users (username, password_hash, role, name)
+             VALUES ($1, $2, 'manager', $3)
+             RETURNING id, username, role, name`,
+            [username, hash, name]
+        );
+        return res.json({ ok: true, user: result.rows[0] });
+    } catch (err) {
+        console.error('Bootstrap endpoint error:', err);
+        return res.status(500).json({ error: err.message || 'فشل إنشاء المدير' });
+    }
+});
+
 app.post('/api/auth/login', async (req, res) => {
     try {
         if (!isSupabaseConnected) {
