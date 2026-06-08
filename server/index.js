@@ -796,9 +796,69 @@ function getRowValue(row, ...keys) {
     return undefined;
 }
 
+const KEY_TO_DB_ALIASES = {
+    courseCode: ['course_code', 'coursecode', 'courseCode'],
+    courseName: ['course_name', 'coursename', 'courseName'],
+    studentId: ['student_id', 'studentid', 'studentId'],
+    committeeId: ['committee_id', 'committeeid', 'committeeId'],
+    proctorId: ['proctor_id', 'proctorid', 'proctorId'],
+    examCode: ['exam_code', 'examcode', 'examCode'],
+    roomId: ['room_id', 'roomid', 'roomId'],
+    createdAt: ['created_at', 'createdat', 'createdAt'],
+};
+
+const HTTP_TABLE_DEFAULT_COLUMNS = {
+    exams: ['course_code', 'course_name', 'date', 'time', 'duration', 'type', 'department', 'specialization'],
+    student_courses: ['student_id', 'course_code'],
+    committees: ['id', 'exam_code', 'room_id', 'specialization'],
+    committee_proctors: ['committee_id', 'proctor_id'],
+    committee_students: ['committee_id', 'student_id'],
+    students: ['id', 'name', 'specialization'],
+    rooms: ['id', 'name', 'type', 'capacity'],
+    proctors: ['id', 'name', 'department'],
+    draft_schedules: ['id', 'name', 'created_at', 'payload'],
+};
+
+const httpTableColumnsCache = {};
+
+function resolveDbKey(logicalKey, availableColumns) {
+    const candidates = KEY_TO_DB_ALIASES[logicalKey] || [logicalKey];
+    if (availableColumns?.length) {
+        for (const candidate of candidates) {
+            const hit = availableColumns.find(
+                (col) => col === candidate || col.toLowerCase() === candidate.toLowerCase()
+            );
+            if (hit) return hit;
+        }
+    }
+    return candidates[0];
+}
+
+function mapRowForHttp(row, columns) {
+    const mapped = {};
+    for (const [key, value] of Object.entries(row)) {
+        mapped[resolveDbKey(key, columns)] = value === undefined ? null : value;
+    }
+    return mapped;
+}
+
+async function getHttpTableColumns(table) {
+    if (httpTableColumnsCache[table]) return httpTableColumnsCache[table];
+    const { data, error } = await supabase.from(table).select('*').limit(1);
+    if (error) throw error;
+    const columns = data?.[0] ? Object.keys(data[0]) : (HTTP_TABLE_DEFAULT_COLUMNS[table] || ['id']);
+    httpTableColumnsCache[table] = columns;
+    return columns;
+}
+
 async function deleteAll(table, filterColumn) {
     if (useSupabaseClient) {
-        const { error } = await supabase.from(table).delete().neq(filterColumn, '');
+        const { data, error: selectError } = await supabase.from(table).select('*').limit(1);
+        if (selectError) throw selectError;
+        if (!data?.length) return;
+        const columns = Object.keys(data[0]);
+        const filter = resolveDbKey(filterColumn, columns);
+        const { error } = await supabase.from(table).delete().not(filter, 'is', null);
         if (error) throw error;
         return;
     }
@@ -809,9 +869,10 @@ async function bulkInsert(table, rows) {
     if (!rows || rows.length === 0) return;
 
     if (useSupabaseClient) {
+        const columns = await getHttpTableColumns(table);
         const chunkSize = 500;
         for (let i = 0; i < rows.length; i += chunkSize) {
-            const chunk = rows.slice(i, i + chunkSize);
+            const chunk = rows.slice(i, i + chunkSize).map((row) => mapRowForHttp(row, columns));
             const { error } = await supabase.from(table).insert(chunk, { returning: 'minimal' });
             if (error) throw error;
         }
@@ -865,15 +926,15 @@ app.get('/api/state', async (req, res) => {
             name: s.name,
             specialization: s.specialization,
             courseCodes: studentCoursesData
-                .filter((sc) => getRowValue(sc, 'studentId', 'studentid') === s.id)
-                .map((sc) => getRowValue(sc, 'courseCode', 'coursecode'))
+                .filter((sc) => getRowValue(sc, 'studentId', 'studentid', 'student_id') === s.id)
+                .map((sc) => getRowValue(sc, 'courseCode', 'coursecode', 'course_code'))
                 .filter(Boolean),
         }));
 
         // Exams, Rooms, Proctors (Direct mapping)
         state.exams = examsData.map((e) => ({
-            courseCode: getRowValue(e, 'courseCode', 'coursecode'),
-            courseName: getRowValue(e, 'courseName', 'coursename'),
+            courseCode: getRowValue(e, 'courseCode', 'coursecode', 'course_code'),
+            courseName: getRowValue(e, 'courseName', 'coursename', 'course_name'),
             date: e.date,
             time: e.time,
             duration: e.duration,
@@ -888,16 +949,16 @@ app.get('/api/state', async (req, res) => {
         // Reconstruct Committees
         state.committees = committeesData.map((c) => ({
             id: c.id,
-            examCode: getRowValue(c, 'examCode', 'examcode'),
+            examCode: getRowValue(c, 'examCode', 'examcode', 'exam_code'),
             specialization: c.specialization,
-            roomId: getRowValue(c, 'roomId', 'roomid'),
+            roomId: getRowValue(c, 'roomId', 'roomid', 'room_id'),
             proctorIds: commProctorsData
-                .filter((cp) => getRowValue(cp, 'committeeId', 'committeeid') === c.id)
-                .map((cp) => getRowValue(cp, 'proctorId', 'proctorid'))
+                .filter((cp) => getRowValue(cp, 'committeeId', 'committeeid', 'committee_id') === c.id)
+                .map((cp) => getRowValue(cp, 'proctorId', 'proctorid', 'proctor_id'))
                 .filter(Boolean),
             studentIds: commStudentsData
-                .filter((cs) => getRowValue(cs, 'committeeId', 'committeeid') === c.id)
-                .map((cs) => getRowValue(cs, 'studentId', 'studentid'))
+                .filter((cs) => getRowValue(cs, 'committeeId', 'committeeid', 'committee_id') === c.id)
+                .map((cs) => getRowValue(cs, 'studentId', 'studentid', 'student_id'))
                 .filter(Boolean),
         }));
 

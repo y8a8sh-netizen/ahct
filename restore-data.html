@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>استعادة بيانات الجدول</title>
+  <style>
+    body { font-family: Tahoma, Arial, sans-serif; max-width: 720px; margin: 40px auto; padding: 20px; background: #f8faf8; }
+    h1 { color: #166534; }
+    .box { background: #fff; border: 1px solid #d1d5db; border-radius: 10px; padding: 16px; margin: 16px 0; }
+    button { background: #166534; color: #fff; border: none; padding: 12px 20px; border-radius: 8px; cursor: pointer; font-size: 16px; margin: 6px 4px; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .warn { color: #b45309; }
+    .ok { color: #166534; }
+    .err { color: #b91c1c; }
+    input { width: 100%; padding: 10px; margin: 8px 0; border: 1px solid #ccc; border-radius: 6px; }
+    pre { background: #f3f4f6; padding: 10px; overflow: auto; font-size: 12px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <h1>🆘 استعادة بيانات الجدول</h1>
+  <p>افتح هذه الصفحة في <strong>نفس المتصفح</strong> الذي استخدمته لإدارة النظام (Chrome / Edge).</p>
+
+  <div class="box">
+    <h3>1) فحص النسخة المحلية</h3>
+    <p id="status">جاري الفحص...</p>
+    <pre id="preview"></pre>
+    <button id="btnRestore" disabled>استعادة إلى قاعدة البيانات</button>
+  </div>
+
+  <div class="box">
+    <h3>2) عنوان الخادم</h3>
+    <input id="apiBase" value="http://localhost:3001" />
+    <p class="warn">إذا تفتح الموقع عبر IP الشبكة، غيّر إلى مثلاً: http://192.168.8.214:3001</p>
+  </div>
+
+  <div class="box">
+    <h3>3) أو الصق نسخة JSON يدوياً</h3>
+    <textarea id="manualJson" rows="6" style="width:100%;font-family:monospace;"></textarea>
+    <button id="btnManual">استعادة من JSON الملصوق</button>
+  </div>
+
+  <p id="result"></p>
+
+  <script>
+    const KEY = 'tvtc_exam_system';
+    const statusEl = document.getElementById('status');
+    const previewEl = document.getElementById('preview');
+    const btnRestore = document.getElementById('btnRestore');
+    const resultEl = document.getElementById('result');
+    let cached = null;
+
+    function summarize(data) {
+      return {
+        students: data.students?.length ?? 0,
+        exams: data.exams?.length ?? 0,
+        rooms: data.rooms?.length ?? 0,
+        proctors: data.proctors?.length ?? 0,
+        committees: data.committees?.length ?? 0,
+        drafts: data.drafts?.length ?? 0,
+      };
+    }
+
+    async function doRestore(data) {
+      const base = document.getElementById('apiBase').value.replace(/\/$/, '');
+      resultEl.textContent = 'جاري الإرسال...';
+      resultEl.className = '';
+      try {
+        const res = await fetch(base + '/api/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) {
+          resultEl.textContent = '✅ تمت الاستعادة بنجاح! حدّث صفحة النظام الآن (F5).';
+          resultEl.className = 'ok';
+        } else {
+          resultEl.textContent = '❌ فشل: ' + (body.error || res.status);
+          resultEl.className = 'err';
+        }
+      } catch (e) {
+        resultEl.textContent = '❌ تعذر الاتصال بالخادم. تأكد أن السيرفر يعمل.';
+        resultEl.className = 'err';
+      }
+    }
+
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) {
+        statusEl.innerHTML = '<span class="warn">⚠️ لم تُعثر على نسخة في localStorage.</span><br>جرّب المتصفح الآخر، أو الصق JSON يدوياً أدناه، أو استعد من Supabase.';
+      } else {
+        cached = JSON.parse(raw);
+        const s = summarize(cached);
+        statusEl.innerHTML = '<span class="ok">✅ وُجدت نسخة محلية!</span>';
+        previewEl.textContent = JSON.stringify(s, null, 2);
+        if (s.committees > 0 || s.students > 0) {
+          btnRestore.disabled = false;
+        }
+      }
+    } catch (e) {
+      statusEl.innerHTML = '<span class="err">خطأ في قراءة النسخة المحلية</span>';
+    }
+
+    btnRestore.onclick = () => cached && doRestore(cached);
+    document.getElementById('btnManual').onclick = () => {
+      try {
+        const data = JSON.parse(document.getElementById('manualJson').value);
+        doRestore(data);
+      } catch {
+        resultEl.textContent = '❌ JSON غير صالح';
+        resultEl.className = 'err';
+      }
+    };
+  </script>
+</body>
+</html>
