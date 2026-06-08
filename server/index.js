@@ -120,6 +120,17 @@ const verifySupabaseHttpClient = async () => {
     return { ok: true, client, warning: error?.message };
 };
 
+const warmHttpTableColumnsCache = async () => {
+    const tables = Object.keys(HTTP_TABLE_DEFAULT_COLUMNS);
+    for (const table of tables) {
+        try {
+            await getHttpTableColumns(table);
+        } catch (err) {
+            console.warn(`HTTP column cache warmup skipped for ${table}:`, err.message || err);
+        }
+    }
+};
+
 const activateSupabaseHttpClient = (client) => {
     supabase = client;
     useSupabaseClient = true;
@@ -127,7 +138,12 @@ const activateSupabaseHttpClient = (client) => {
     dbConnectionMode = 'supabase-http';
     isSupabaseConnected = true;
     console.log('\n✅ ✅ ✅ متصل بنجاح مع Supabase عبر HTTP client ✅ ✅ ✅');
+    warmHttpTableColumnsCache().catch((err) => {
+        console.warn('HTTP column cache warmup failed:', err.message || err);
+    });
 };
+
+let syncInProgress = false;
 
 const resolveDbHostToIPv4 = async (host) => {
     if (!host || !/[a-zA-Z]/.test(host)) {
@@ -980,6 +996,12 @@ app.get('/api/state', async (req, res) => {
 
 // 2. POST Full State (Sync)
 app.post('/api/sync', async (req, res) => {
+    if (syncInProgress) {
+        return res.status(429).json({ error: 'مزامنة جارية بالفعل، انتظر قليلاً ثم حاول مجدداً' });
+    }
+    syncInProgress = true;
+
+    try {
     const data = req.body;
     console.log(`[${new Date().toLocaleTimeString()}] 📥 Received sync request (Committees: ${data.committees?.length || 0})`);
 
@@ -1195,6 +1217,9 @@ app.post('/api/sync', async (req, res) => {
         res.status(500).json({ error: err.message });
     } finally {
         client.release();
+    }
+    } finally {
+        syncInProgress = false;
     }
 });
 

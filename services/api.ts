@@ -31,21 +31,31 @@ export const fetchSystemState = async (): Promise<SystemState | null> => {
     }
 };
 
+let syncInFlight: Promise<boolean> | null = null;
+
 export const syncSystemState = async (data: SystemState): Promise<boolean> => {
-    try {
-        const url = `${getApiUrl()}/sync`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(data),
-        });
-        return response.ok;
-    } catch (error) {
-        console.warn('Sync failed (Offline Mode):', error instanceof Error ? error.message : error);
-        return false;
-    }
+    if (syncInFlight) return syncInFlight;
+
+    syncInFlight = (async () => {
+        try {
+            const url = `${getApiUrl()}/sync`;
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            });
+            return response.ok;
+        } catch (error) {
+            console.warn('Sync failed (Offline Mode):', error instanceof Error ? error.message : error);
+            return false;
+        } finally {
+            syncInFlight = null;
+        }
+    })();
+
+    return syncInFlight;
 };
 
 export const loginUser = async (

@@ -99,7 +99,7 @@ const App: React.FC = () => {
                           setLastSaved(new Date());
                       }
                   }).catch(err => console.error("Sync failed", err));
-              }, 2000); // 2 second debounce
+              }, 15000); // 15s debounce — يقلل استهلاك Supabase Egress
               return () => clearTimeout(timeoutId);
           }
       }
