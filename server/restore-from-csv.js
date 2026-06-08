@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
+const https = require('https');
 
 const CSV_DIR = path.join(__dirname, '..', 'examapp', 'New folder');
 // للإنتاج: API_URL=https://ahct.onrender.com node restore-from-csv.js
@@ -105,9 +106,10 @@ function sync(data) {
     return new Promise((resolve, reject) => {
         const body = JSON.stringify(data);
         const url = new URL(API + '/api/sync');
-        const req = http.request({
+        const transport = url.protocol === 'https:' ? https : http;
+        const req = transport.request({
             hostname: url.hostname,
-            port: url.port || 80,
+            port: url.port || (url.protocol === 'https:' ? 443 : 80),
             path: url.pathname,
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },

@@ -797,22 +797,22 @@ function getRowValue(row, ...keys) {
 }
 
 const KEY_TO_DB_ALIASES = {
-    courseCode: ['course_code', 'coursecode', 'courseCode'],
-    courseName: ['course_name', 'coursename', 'courseName'],
-    studentId: ['student_id', 'studentid', 'studentId'],
-    committeeId: ['committee_id', 'committeeid', 'committeeId'],
-    proctorId: ['proctor_id', 'proctorid', 'proctorId'],
-    examCode: ['exam_code', 'examcode', 'examCode'],
-    roomId: ['room_id', 'roomid', 'roomId'],
+    courseCode: ['coursecode', 'course_code', 'courseCode'],
+    courseName: ['coursename', 'course_name', 'courseName'],
+    studentId: ['studentid', 'student_id', 'studentId'],
+    committeeId: ['committeeid', 'committee_id', 'committeeId'],
+    proctorId: ['proctorid', 'proctor_id', 'proctorId'],
+    examCode: ['examcode', 'exam_code', 'examCode'],
+    roomId: ['roomid', 'room_id', 'roomId'],
     createdAt: ['created_at', 'createdat', 'createdAt'],
 };
 
 const HTTP_TABLE_DEFAULT_COLUMNS = {
-    exams: ['course_code', 'course_name', 'date', 'time', 'duration', 'type', 'department', 'specialization'],
-    student_courses: ['student_id', 'course_code'],
-    committees: ['id', 'exam_code', 'room_id', 'specialization'],
-    committee_proctors: ['committee_id', 'proctor_id'],
-    committee_students: ['committee_id', 'student_id'],
+    exams: ['coursecode', 'coursename', 'date', 'time', 'duration', 'type', 'department', 'specialization'],
+    student_courses: ['studentid', 'coursecode'],
+    committees: ['id', 'examcode', 'roomid', 'specialization'],
+    committee_proctors: ['committeeid', 'proctorid'],
+    committee_students: ['committeeid', 'studentid'],
     students: ['id', 'name', 'specialization'],
     rooms: ['id', 'name', 'type', 'capacity'],
     proctors: ['id', 'name', 'department'],
